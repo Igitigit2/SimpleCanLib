@@ -44,6 +44,10 @@ void SimpleCANProfile::Init(CanIDFilter IDFilterFunc)
 		: "CAN: error when initializing.");
 
 
+	SCCanStatus rc=CAN_OK;
+
+	#if 0
+	-> This should go into the application code, since it is specific to the CAN IDs used by the application! 
 	// Configure Rx filter
 	FilterDefinition FilterConfig;
 	FilterConfig.IdType = CAN_STDID;
@@ -52,8 +56,9 @@ void SimpleCANProfile::Init(CanIDFilter IDFilterFunc)
 	FilterConfig.FilterConfig = CAN_FILTER_TO_RXFIFO0;
 	FilterConfig.FilterID1 = 0x0;
 	FilterConfig.FilterID2 = 0x700;
+	rc = Can1->ConfigFilter(&FilterConfig);
+	#endif
 
-	SCCanStatus rc = Can1->ConfigFilter(&FilterConfig);
 	if (rc==CAN_OK) rc = Can1->ConfigGlobalFilter();
 	if (rc==CAN_OK) rc = Can1->ActivateNotification(8, ::HandleCanMessage, this);			
 	if (rc!=CAN_OK)	Serial.println("CAN initialization error!");
@@ -62,8 +67,6 @@ void SimpleCANProfile::Init(CanIDFilter IDFilterFunc)
 		? "CAN: started."
 		: "CAN: error when starting.");
 }
-
-
 
 
 void SimpleCANProfile::CANSendText(const char* Text, int CanID)
@@ -87,13 +90,22 @@ void SimpleCANProfile::CANSendFloat(float Val1, float Val2, int CanID)
 }
 
 
-void SimpleCANProfile::CANSendInt(int Val, int CanID)
+void SimpleCANProfile::CANSendInt(int32_t Val, int CanID)
 {
 	Can1->SendMessage((uint8_t*)&Val,  sizeof(int), CanID);
 }
 
 
- int SimpleCANProfile::CANGetInt(const uint8_t* pData)
+void SimpleCANProfile::CANSendInt(int32_t Val1, int32_t Val2, int CanID)
+{
+    uint8_t Buffer[2*sizeof(int32_t)];
+    memcpy(Buffer, &Val1, sizeof(int32_t));
+    memcpy(Buffer+ sizeof(int32_t), &Val2, sizeof(int32_t));
+	Can1->SendMessage(Buffer,  2*sizeof(int32_t), CanID);
+}
+
+
+int SimpleCANProfile::CANGetInt(const uint8_t* pData)
 {
 	int Val;
 	memcpy(&Val, pData, sizeof(int));
@@ -101,28 +113,34 @@ void SimpleCANProfile::CANSendInt(int Val, int CanID)
 }
 
 
- void SimpleCANProfile::CANGetString(const uint8_t* pData, char* pChar, const int MaxLen)
+void SimpleCANProfile::CANGetInt(const uint8_t* pData, int32_t* pInt1, int32_t* pInt2)
+{
+	memcpy(pInt1, pData, sizeof(int));
+	memcpy(pInt2, pData+sizeof(int), sizeof(int));
+}
+
+
+void SimpleCANProfile::CANGetString(const uint8_t* pData, char* pChar, const int MaxLen)
 {
 	memcpy(pChar, pData, MaxLen);
 	pChar[MaxLen]= 0;
 }
 
 
- float SimpleCANProfile::CANGetFloat(const uint8_t* pData)
+float SimpleCANProfile::CANGetFloat(const uint8_t* pData)
 {
 	float Val;
 	memcpy(&Val, pData, sizeof(float));
 	return Val;
 }
 
- void SimpleCANProfile::CANGetFloat(const uint8_t* pData, float* pVal1, float* pVal2)
+
+void SimpleCANProfile::CANGetFloat(const uint8_t* pData, float* pVal1, float* pVal2)
 {
 	float Val;
 	memcpy(pVal1, pData, sizeof(float));
 	memcpy(pVal2, pData+sizeof(float), sizeof(float));
 }
-
-
 
 
 //--------------------------------------------------------------------------------------
@@ -134,11 +152,13 @@ RxHandlerBase::RxHandlerBase(uint16_t dataLength)
 	_rxDataLength = dataLength;
 }
 
+
 void RxHandlerBase::SetProfileCallback(uint16_t dataLength, RxCallback callback, void* userData)
 {
 	ProfileCallback = callback;
 	ProfileClass = userData;
 }
+
 
 RxHandlerBase::~RxHandlerBase()
 {
@@ -147,6 +167,7 @@ RxHandlerBase::~RxHandlerBase()
 
 
 // This function is called by the actual low level ISR when a new frame is received.
+// ISR, absolutely no printing to serial!!
 void RxHandlerBase::Notify(/*...*/)
 {
 	CanRxMessage Msg;
@@ -166,6 +187,7 @@ void RxHandlerBase::Notify(/*...*/)
 		RxQueue.Enqueue(Msg);
 }
 
+
 bool RxHandlerBase::Loop()
 {
 	bool rc = false;
@@ -176,12 +198,12 @@ bool RxHandlerBase::Loop()
 		CanRxMessage Msg;
  		if (RxQueue.Dequeue(&Msg))
 		{
+			// Serial.println("Read message from buffer");
 			// --- Convert the header and call the user provided RX handler.
 			ProfileCallback(Msg.SCHeader, Msg.Data, ProfileClass);
 		}
 	}
-	else Serial.println("SimpleCan_B_g431B::RxHandler::notify(): No callback set!");
-	
+	else Serial.println("RxHandlerBase::Loop(): No callback set!");
 	
 	return rc;
 }

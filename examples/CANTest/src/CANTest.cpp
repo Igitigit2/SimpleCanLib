@@ -1,10 +1,7 @@
 /*
 
     Demo code for portable CAN bus library
-
-	This code uses the button on the B-G431B-ESC1 board to issue a reset.
-	On ESP32 platforms, OTA updates are activated (but I did not get it to work reliably under platformio!).
-    
+   
 	(c) 2022 Christian Schmidmer, use is subject to MIT license
 */
 
@@ -75,16 +72,24 @@ RxFromCAN CANBroker;
 // The actual CAN bus class, which handles all communication.
 CANPingPong CANDevice(CreateCanLib(), &CANBroker);
 
+int MyDeviceID=0;
+
 void setup() 
 {
 	Serial.begin(BAUDRATE);
 	delay(3000);
+	while (!Serial);
 	Serial.println("Started");
+
+	// Create a random device ID to avoid conflicts on the CAN bus.
+	MyDeviceID = random(1, 255);
 
 	CANDevice.Init();
 	// Set bus termination on/off (may not be available on all platforms).
-	CANDevice.Can1->SetBusTermination(true);
-	Serial.println("Setup done");
+	if (CAN_OK!=CANDevice.Can1->SetBusTermination(true))
+		Serial.println("Setting CAN bus termination via software not possible");
+	
+	Serial.printf("Setup done, random device ID is %d\n", MyDeviceID);
 }
 
 void loop()
@@ -93,35 +98,47 @@ void loop()
 	static uint32_t LastFloatAction=millis();
 	static uint32_t LastRTR=millis();
 
+	int RandWait = random(-500, 1000);
+
 	// Test of regular messages:
 	// What is sent next to the CAN bus depends on what was received last. 
 	// When a PING was received, send a PONG and vice versa.
 	// To get the whole thing started, a PONG is sent every 5s without having received anything.
-	// This just for testing. Usually you would activate actions for incomming messages
-	// directly in the broker.
-	if (CANBroker.ReceivedID==CANID_PP_PING  || (LastAction+5000<millis()) )
+	// This is just for testing. Usually you would invoke actions for incomming messages
+	// directly in the broker class.
+	if ((CANBroker.ReceivedID==CANID_PP_PING && LastAction+1000<millis()) || (LastAction+RandWait+5000<millis()) )
 	{
-		CANDevice.CANSendText("Pong", CANID_PP_PONG);
+		Serial.println("Sending Pong");
+		CANDevice.CANSendText("Pong", PP_MAKE_CAN_ID(MyDeviceID, CANID_PP_PONG));
 		LastAction=millis();
+
+		// Make sure we don't react twice to the same message.
+		CANBroker.ReceivedID = -1;		
 	}
-	else if (CANBroker.ReceivedID==CANID_PP_PONG)
+	else if (CANBroker.ReceivedID==CANID_PP_PONG && LastAction+RandWait+1000<millis())
 	{
-		CANDevice.CANSendText("Ping", CANID_PP_PING);
+		Serial.println("Sending Ping");
+		CANDevice.CANSendText("Ping", PP_MAKE_CAN_ID(MyDeviceID, CANID_PP_PING));
 		LastAction=millis();
+
+		// Make sure we don't react twice to the same message.
+		CANBroker.ReceivedID = -1;		
 	}
 	else if (CANBroker.ReceivedID==CANID_PP_RTRINT && CANBroker.RTR)
 	{
+		// React to an RTR request message. The reply should be the number "1234". If something else is 
+		// received, check the byte order used by the devices!
 		CANBroker.RTR=false;
-		CANDevice.CANSendInt(1234, CANID_PP_RTRINT);
+		CANDevice.CANSendInt(1234, PP_MAKE_CAN_ID(MyDeviceID, CANID_PP_RTRINT));
+
+		// Make sure we don't react twice to the same message.
+		CANBroker.ReceivedID = -1;		
 	}
 
-	// Make sure we don't react twice to the same message.
-	CANBroker.ReceivedID = -1;		
 
-
-	// Test of RTR messages
-	// Every 3s send a float value
-	if (LastFloatAction+3000<millis() )
+	// Every 3s just send a float value. This can be used to check if all devices on 
+	// the bus use the same floating point number representation and byte order.
+	if (LastFloatAction+RandWait+3000<millis() )
 	{
 		float NewVal = CANBroker.ReceivedFloatVal*2.5;
 		if (NewVal==0) NewVal=1.0f;
@@ -129,16 +146,36 @@ void loop()
 		if(NewVal<-1000000) NewVal = 1.0;
 
 		Serial.printf("Sending: %.3f\n", NewVal);
-		CANDevice.CANSendFloat(NewVal, CANID_PP_FLOAT);
+		CANDevice.CANSendFloat(NewVal, PP_MAKE_CAN_ID(MyDeviceID, CANID_PP_FLOAT));
 		LastFloatAction=millis();
 	}
 
-	// Every 5s request an int value
-	if (LastRTR+5000<millis() )
+	// Test of RTR messages
+	// Every 5s request an int value. Response should be the number 1234 in binary form.
+	if (LastRTR+RandWait+5000<millis() )
 	{
 		Serial.printf("Request int\n");
-		CANDevice.CANRequestInt();
+		CANDevice.CANRequestInt(MyDeviceID);
 		LastRTR=millis();
+	}
+
+	// Get some statistics on bus errors.
+	static int LastTxErrors=0;
+	static int LastRxErrors=0;
+	static int LastOtherErrors = 0;
+	static uint32_t LastStatus = 0;
+	uint32_t Status = 0;
+	char StatusStr[MAX_STATUS_STR_LEN]={0};
+
+	CANDevice.Can1->GetStatus(&Status, StatusStr);
+	if (CANDevice.Can1->GetTxErrors()!=LastTxErrors || CANDevice.Can1->GetRxErrors()!=LastRxErrors || CANDevice.Can1->GetOtherErrors()!=LastOtherErrors || LastStatus!=Status)
+	{
+		LastTxErrors = CANDevice.Can1->GetTxErrors();
+		LastRxErrors = CANDevice.Can1->GetRxErrors();
+		LastOtherErrors = CANDevice.Can1->GetOtherErrors();
+		LastStatus = Status;
+
+		Serial.printf("New Status=%s, RxErrors=%d, TxErrors=%d, Other=%d\n", StatusStr, LastTxErrors, LastRxErrors, LastOtherErrors);
 	}
 
 	// Update message queues.

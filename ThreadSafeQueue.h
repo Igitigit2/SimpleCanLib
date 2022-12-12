@@ -103,6 +103,7 @@ class SafeQueue
         }
 
         // Add an element to the queue.
+        // ISR, absolutely no printing to serial!!
         void Enqueue(T t)
         {
             xQueueSendFromISR(Queue, &t, 0);
@@ -111,6 +112,7 @@ class SafeQueue
 
         // Get the "front"-element.
         // If the queue is empty, wait till a element is avaiable.
+        // ISR, absolutely no printing to serial!!
         bool Dequeue(T* pVal)
         {
             if(xQueueReceive(Queue, pVal, 0))

@@ -14,11 +14,11 @@
 */
 
 #include <arduino.h>
-#ifdef NO_LOGLIB
+#ifdef USE_LOGLIB
+	#include "Logging.h"
+#else
 	#define PrintLnLog  Serial.println
 	#define PrintLog    Serial.printf
-#else
-	#include "Logging.h"
 #endif
 #include "SimpleCan.h"
 
@@ -30,7 +30,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-#include "esp_intr_alloc.h"        // "esp_intr.h"
+#include "esp_intr_alloc.h"       
 #include "soc/dport_reg.h"
 #include <math.h>
 
@@ -51,15 +51,16 @@ class CANTxMessage
 		bool RTR;
 };
 
-SafeQueue<CANTxMessage> TxQueue(TX_QUEUE_SIZE);
 
+
+SafeQueue<CANTxMessage> TxQueue(TX_QUEUE_SIZE);
 
 static  void CAN_isr(void *arg_p);
 
 class RxHandlerESP32 : public RxHandlerBase
 {
 	public:
-		// Note: The constructor here is a must on order to initialize the base class. 
+		// Note: The constructor here is a must in order to initialize the base class. 
 		RxHandlerESP32(uint16_t dataLength) : RxHandlerBase(dataLength) {};
 		 bool CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, int MaxDataLen);
 		 void ReleaseRcvBuffer();
@@ -68,6 +69,7 @@ class RxHandlerESP32 : public RxHandlerBase
 
 
 // Copy max _rxDataLength bytes from received frame to _rxData. 
+// ISR, absolutely no printing to serial!!
 bool RxHandlerESP32::CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, int MaxDataLen)
 {
 	// Frame read buffer
@@ -124,12 +126,14 @@ bool RxHandlerESP32::CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, i
 
 
 // Let the hardware know the frame has been read.
+// ISR, absolutely no printing to serial!!
 void RxHandlerESP32::ReleaseRcvBuffer()
 {
-	MODULE_CAN->CMR.B.RRB = 1;	
+	// MODULE_CAN->CMR.B.RRB = 1;	
+	HAL_FORCE_MODIFY_U32_REG_FIELD(MODULE_CAN->CMR, B.RRB, 1);
 }
 
-static RxHandlerESP32 Can1RxHandler(8);			// Preferably this should be allocated by the HAL, just paramtereized here!
+static RxHandlerESP32 Can1RxHandler(8);			
 
 class SimpleCan_ESP32_DevC : public SimpleCan
 {
@@ -146,7 +150,7 @@ class SimpleCan_ESP32_DevC : public SimpleCan
 		static void SendRequestMessage(int NumBytes, int CanID, bool UseEFF=false);
 
 
-		void SetBusTermination(bool On);
+		SCCanStatus SetBusTermination(bool On);
 		SCCanStatus Init(SCCanSpeed speed, CanIDFilter IDFilterFunc=0);
 		SCCanStatus ConfigFilter(FilterDefinition *filterDef);
 		SCCanStatus ConfigGlobalFilter(uint32_t nonMatchingStd, uint32_t nonMatchingExt, uint32_t rejectRemoteStd, uint32_t rejectRemoteExt);
@@ -160,6 +164,7 @@ class SimpleCan_ESP32_DevC : public SimpleCan
 		int GetTxErrors(); 
 		int GetRxErrors(); 
 		int GetOtherErrors();
+		SCCanStatus GetStatus(uint32_t* Status, char* Str);
 
 		static RxHandlerESP32 *RxHandlerP;	
 		static int CANBusErrors;	        
@@ -176,43 +181,45 @@ CanIDFilter SimpleCan_ESP32_DevC::SendIDFilterFunc;
 int SimpleCan_ESP32_DevC::CANBusErrors;
 
 
-RxHandlerESP32* SimpleCan_ESP32_DevC::RxHandlerP=nullptr;	// Presumably this must be static because of IRQs????
+RxHandlerESP32* SimpleCan_ESP32_DevC::RxHandlerP=nullptr;	
 
+
+// Pump all messages present in the RX Fifo to the receice queue.
+void EmptyRxFifo()
+{
+	while (MODULE_CAN->IR.U & 0x1)
+	{
+		// Serial.print("+");
+
+		SimpleCan_ESP32_DevC::RxHandlerP->Notify();
+
+		if (SimpleCan_ESP32_DevC::RxHandlerP == NULL)
+		{
+			// Let the hardware know the frame has been read.
+			// Normaly the rxHandler should do this, since it can release the buffer earlier than this routine.
+			// But if there is no handler, we have to do it here...  
+			MODULE_CAN->CMR.B.RRB = 1;	
+			PrintLnLog("ERROR: No receive handler installed!");
+			return;
+		}
+	}
+}
+
+// ISR, absolutely no printing to serial!!
 static  void CAN_isr(void *arg_p)
 {
 	// PrintLnLog("+");
-
     // Read interrupt status and clear flags
+	// Reading this clears the flags???
     uint32_t interrupt = MODULE_CAN->IR.U;
 
     // Handle TX complete interrupt
     if (interrupt & __CAN_IRQ_TX) 
 	{
-
+		// PrintLnLog("t");
     	// Try sending another message from the queue.
 		SimpleCan_ESP32_DevC::SendNextMessageFromQueue();
     }
-
-    // Handle RX frame available interrupt
-    if (interrupt & __CAN_IRQ_RX)
-    {
-		// Serial.print("i");
-		while (MODULE_CAN->RMC.B.RMC>0)
-		{
-			// Serial.print("+");
-			if (SimpleCan_ESP32_DevC::RxHandlerP == NULL)
-			{
-				// Let the hardware know the frame has been read.
-				// Normaly the rxHandler should do this, since it can release the buffer earlier than this routine.
-				// But if there is no handler, we have to do it here...  
-				MODULE_CAN->CMR.B.RRB = 1;	
-				PrintLnLog("ERROR: No receive handler installed!");
-				return;
-			}
-			SimpleCan_ESP32_DevC::RxHandlerP->Notify();
-		}
-		return;
-	}
 	
 
  #if 0
@@ -227,23 +234,38 @@ static  void CAN_isr(void *arg_p)
 		PrintLnLog("CAN ERROR: __CAN_IRQ_ERR_PASSIVE");
 
     if (interrupt & __CAN_IRQ_ARB_LOST)
-		; // Don'tz print, this happens often! PrintLnLog("CAN ERROR: __CAN_IRQ_ARB_LOST");
+		PrintLnLog("CAN ERROR: __CAN_IRQ_ARB_LOST");
 
     if (interrupt & __CAN_IRQ_BUS_ERR)
 		PrintLnLog("CAN ERROR: __CAN_IRQ_BUS_ERR");
+
+    if (interrupt & __CAN_IRQ_WAKEUP)
+		PrintLnLog("CAN ERROR: __CAN_IRQ_WAKEUP");
 #endif
     // Handle error interrupts.
-    if (interrupt & __CAN_IRQ_ERR						//0x4
+    if (interrupt & (__CAN_IRQ_ERR						//0x4
                       | __CAN_IRQ_DATA_OVERRUN			//0x8
                       | __CAN_IRQ_WAKEUP				//0x10
-                      | __CAN_IRQ_ERR_PASSIVE			//0x20
-                      | __CAN_IRQ_ARB_LOST				//0x40
-                      | __CAN_IRQ_BUS_ERR				//0x80
+                      | __CAN_IRQ_ERR_PASSIVE			//0x20 v
+                      | __CAN_IRQ_ARB_LOST				//0x40 v
+                      | __CAN_IRQ_BUS_ERR)				//0x80 v
 	)
 	{
+		// PrintLnLog("e");
     	/*Error handler*/
 		SimpleCan_ESP32_DevC::CANBusErrors++;
     }
+
+	
+    // Handle RX frame available interrupt
+	// Check this last, because it reads the interrupt status register repeatedly, which will clear all other IRQs.
+    if (interrupt & __CAN_IRQ_RX)
+    {
+		// Serial.print("r");
+		EmptyRxFifo();
+		return;
+	}
+
 }
 
 
@@ -262,9 +284,9 @@ SimpleCan_ESP32_DevC::SimpleCan_ESP32_DevC(gpio_num_t _TxPin, gpio_num_t _RxPin)
 	CANBusErrors = 0;
 }
 
-void SimpleCan_ESP32_DevC::SetBusTermination(bool On)
+SCCanStatus SimpleCan_ESP32_DevC::SetBusTermination(bool On)
 {
-	// ---
+	return CAN_UNSUPPORTED;
 }
 
 bool SimpleCan_ESP32_DevC::Loop()
@@ -276,18 +298,21 @@ SCCanStatus SimpleCan_ESP32_DevC::Start(void)
 {
     //Showtime. Release Reset Mode.
 	PrintLnLog("CAN (ESP32): Start");
-    MODULE_CAN->MOD.B.RM = 0;
+    // MODULE_CAN->MOD.B.RM = 0;
+	HAL_FORCE_MODIFY_U32_REG_FIELD(MODULE_CAN->MOD, B.RM, 0);
 	return CAN_OK;
 }
 
 SCCanStatus SimpleCan_ESP32_DevC::Stop(void)
 {
 	//enter reset mode
-	MODULE_CAN->MOD.B.RM = 1;
+	// MODULE_CAN->MOD.B.RM = 1;
+	HAL_FORCE_MODIFY_U32_REG_FIELD(MODULE_CAN->MOD, B.RM, 1);
+
 	return CAN_OK;
 }
 
-SCCanStatus SimpleCan_ESP32_DevC::Init(SCCanSpeed speed, CanIDFilter IDFilterFunc)
+SCCanStatus __attribute__((optimize("O0"))) SimpleCan_ESP32_DevC::Init(SCCanSpeed speed, CanIDFilter IDFilterFunc)
 {
 	PrintLog("CAN (ESP32): initializing, Tx=%d, Rx=%d, Speed=%d\n", TxPin, RxPin, speed);
 
@@ -312,13 +337,16 @@ SCCanStatus SimpleCan_ESP32_DevC::Init(SCCanSpeed speed, CanIDFilter IDFilterFun
 	gpio_pad_select_gpio(RxPin);
 
     //set to PELICAN mode
-	MODULE_CAN->CDR.B.CAN_M=0x1;			// 0=Basic CAN, 1=PeliCAN
+	// MODULE_CAN->CDR.B.CAN_M=0x1;			// 0=Basic CAN, 1=PeliCAN
+	HAL_FORCE_MODIFY_U32_REG_FIELD(MODULE_CAN->CDR, B.CAN_M, 0x1)
 
 	//synchronization jump width is the same for all baud rates
-	MODULE_CAN->BTR0.B.SJW		=0x1;
+	// MODULE_CAN->BTR0.B.SJW		=0x1;
+	HAL_FORCE_MODIFY_U32_REG_FIELD(MODULE_CAN->BTR0, B.SJW, 1);
 
 	//TSEG2 is the same for all baud rates
-	MODULE_CAN->BTR1.B.TSEG2	=0x1;
+	// MODULE_CAN->BTR1.B.TSEG2	=0x1;
+	HAL_FORCE_MODIFY_U32_REG_FIELD(MODULE_CAN->BTR1, B.TSEG2, 1);
 
 	// Select time quantum and set TSEG1
 	// -> https://www.esacademy.com/en/library/calculators/sja1000-timing-calculator.html
@@ -360,17 +388,23 @@ SCCanStatus SimpleCan_ESP32_DevC::Init(SCCanSpeed speed, CanIDFilter IDFilterFun
     //enable all interrupts
     MODULE_CAN->IER.U = 0xff;
 
+	// Default is single filter mode
+	// MODULE_CAN->MOD.B.AFM = 1;
+	HAL_FORCE_MODIFY_U32_REG_FIELD(MODULE_CAN->MOD, B.AFM, 1);
+
+
  
 #if 1
 	// Accept all
-    MODULE_CAN->MBX_CTRL.ACC.CODE[0] = 0;
-    MODULE_CAN->MBX_CTRL.ACC.CODE[1] = 0;
-    MODULE_CAN->MBX_CTRL.ACC.CODE[2] = 0;
-    MODULE_CAN->MBX_CTRL.ACC.CODE[3] = 0;
-    MODULE_CAN->MBX_CTRL.ACC.MASK[0] = 0xff;
-    MODULE_CAN->MBX_CTRL.ACC.MASK[1] = 0xff;
-    MODULE_CAN->MBX_CTRL.ACC.MASK[2] = 0xff;
-    MODULE_CAN->MBX_CTRL.ACC.MASK[3] = 0xff;
+	MODULE_CAN->MBX_CTRL.ACC.CODE[0] = 0;
+	MODULE_CAN->MBX_CTRL.ACC.CODE[1] = 0;
+	MODULE_CAN->MBX_CTRL.ACC.CODE[2] = 0;
+	MODULE_CAN->MBX_CTRL.ACC.CODE[3] = 0;
+	MODULE_CAN->MBX_CTRL.ACC.MASK[0] = 0xffffffff;
+	MODULE_CAN->MBX_CTRL.ACC.MASK[1] = 0xffffffff;
+	MODULE_CAN->MBX_CTRL.ACC.MASK[2] = 0xffffffff;
+	MODULE_CAN->MBX_CTRL.ACC.MASK[3] = 0xffffffff;
+
 #else
 	// Disable all
     MODULE_CAN->MBX_CTRL.ACC.CODE[0] = 0xff;
@@ -384,21 +418,18 @@ SCCanStatus SimpleCan_ESP32_DevC::Init(SCCanSpeed speed, CanIDFilter IDFilterFun
 #endif
 
     //set to normal mode
-    MODULE_CAN->OCR.B.OCMODE=__CAN_OC_NOM;
+    // Not on ESP32! MODULE_CAN->OCR.B.OCMODE=__CAN_OC_NOM;
 
     //clear error counters
     MODULE_CAN->TXERR.U = 0;
     MODULE_CAN->RXERR.U = 0;
-    (void)MODULE_CAN->ECC;
+    int x = MODULE_CAN->ECC.U;
 
     //clear interrupt flags
-    (void)MODULE_CAN->IR.U;
+    x = MODULE_CAN->IR.U;
 
     //install CAN ISR
     esp_intr_alloc(ETS_CAN_INTR_SOURCE,0,CAN_isr,NULL,NULL);
-
-    //Showtime. Release Reset Mode.
-    // Do not start it yet! Start();
 
     return CAN_OK;
 }
@@ -438,7 +469,7 @@ SCCanStatus SimpleCan_ESP32_DevC::ConfigFilter(FilterDefinition *SCFilter)
 	{
 		PrintLnLog("CAN: setting filter single ID & mask, Ext Frame");
 		uint32_t Code = SCFilter->FilterID1; 
-		uint32_t Mask = SCFilter->FilterID2;		
+		uint32_t Mask = ~SCFilter->FilterID2;		
 		MODULE_CAN->MBX_CTRL.ACC.CODE[0] = Code >> 21; 
 		MODULE_CAN->MBX_CTRL.ACC.CODE[1] = (Code>>13) & 0xff; 
 		MODULE_CAN->MBX_CTRL.ACC.CODE[2] = (Code>>5)  & 0xff; 
@@ -448,6 +479,7 @@ SCCanStatus SimpleCan_ESP32_DevC::ConfigFilter(FilterDefinition *SCFilter)
 		MODULE_CAN->MBX_CTRL.ACC.MASK[1] = (Mask>>13) & 0xff; 
 		MODULE_CAN->MBX_CTRL.ACC.MASK[2] = (Mask>>5)  & 0xff; 
 		MODULE_CAN->MBX_CTRL.ACC.MASK[3] = (Mask<<3) | 0x07;
+		MODULE_CAN->MOD.B.AFM = 1;
 	}
 	else
 	{
@@ -562,15 +594,21 @@ bool SimpleCan_ESP32_DevC::RequestMessage(int NumBytes, int CanID, bool UseEFF)
 	return true;
 }
 
-// Static, also called from ISR!!!!
+// ISR, absolutely no printing to serial!!
 void SimpleCan_ESP32_DevC::SendNextMessageFromQueue()
 {
+
+	// Restart if bus-off state.
+	if (MODULE_CAN->SR.B.BS==1)
+		// Release Reset Mode if it was set.
+		MODULE_CAN->MOD.B.RM = 0;
+
 	CANTxMessage Msg;
 	if (!TxQueue.Dequeue(&Msg))
 		// Nothing to send...
 		return;
 
-	// PrintLog("CAN (ESP32): Sending %d bytes with ID 0x%x\n", NumBytes, CanID);
+	// PrintLog("CAN (ESP32): Sending %d bytes with ID 0x%x as %s frame\n", Msg.Size, Msg.CanID, Msg.EFF?"EFF":"std");
 
 	if (Msg.RTR)
 	{
@@ -617,12 +655,13 @@ void SimpleCan_ESP32_DevC::SendNextMessageFromQueue()
 		// Transmit frame
 		MODULE_CAN->MBX_CTRL.FCTRL.FIR.U = Fir.U;
 		MODULE_CAN->CMR.B.TR=1;
-//		MODULE_CAN->CMR.B.SRX=1;
+		// MODULE_CAN->CMR.B.SRX=1;
 	}
 }
 
 
 
+// ISR, absolutely no printing to serial!!
 void SimpleCan_ESP32_DevC::SendRequestMessage(int NumBytes, int CanID, bool UseEFF)
 {
 	// PrintLog("CAN (ESP32): Sending %d bytes with ID 0x%x\n", NumBytes, CanID);
@@ -673,8 +712,32 @@ int SimpleCan_ESP32_DevC::GetRxErrors()
 
 int SimpleCan_ESP32_DevC::GetOtherErrors() 
 {
-//	return CANBusErrors;
-	return MODULE_CAN->SR.U;
+	return CANBusErrors;
 }
+
+
+#define PrintStatusBit(Value, Text)  
+
+SCCanStatus SimpleCan_ESP32_DevC::GetStatus(uint32_t* Status, char* Str) 
+{
+	if (Status)
+		*Status =  MODULE_CAN->SR.U;
+
+	if (Str) Str[0]=0;
+
+	if (Str && MAX_STATUS_STR_LEN>=40)
+	{
+		strcat(Str, MODULE_CAN->SR.B.BS?" BS":" --");
+		strcat(Str, MODULE_CAN->SR.B.ES?" ES":" -- ");
+		strcat(Str, MODULE_CAN->SR.B.TS?" TS":" --");
+		strcat(Str, MODULE_CAN->SR.B.RS?" RS":" --");
+		strcat(Str, MODULE_CAN->SR.B.TCS?" TCS":" ---");
+		strcat(Str, MODULE_CAN->SR.B.TBS?" TBS":" ---");
+		strcat(Str, MODULE_CAN->SR.B.DOS?" DOS":" ---");
+		strcat(Str, MODULE_CAN->SR.B.RBS?" RBS":" ---");
+	}
+	
+	return CAN_OK;
+};
 
 #endif

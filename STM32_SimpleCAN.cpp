@@ -130,7 +130,7 @@ class SimpleCan_B_g431B : public SimpleCan
 		// return payload. The answer to the RTR frame will be received and handled like any other CAN message.
 		bool RequestMessage(int NumBytes, int CanID, bool UseEFF=false);
 
-		void SetBusTermination(bool On);
+		SCCanStatus SetBusTermination(bool On);
 		SCCanStatus Init(SCCanSpeed speed, CanIDFilter IDFilterFunc=0);
 		SCCanStatus ConfigFilter(FilterDefinition *filterDef);
 		SCCanStatus ConfigGlobalFilter(uint32_t nonMatchingStd, uint32_t nonMatchingExt, uint32_t rejectRemoteStd, uint32_t rejectRemoteExt);
@@ -229,9 +229,10 @@ SimpleCan_B_g431B::SimpleCan_B_g431B()
 	SendIDFilterFunc = 0;
 }
 
-void SimpleCan_B_g431B::SetBusTermination(bool On)
+SCCanStatus SimpleCan_B_g431B::SetBusTermination(bool On)
 {
 	digitalWrite(A_CAN_TERM, On ? HIGH : LOW);
+	return CAN_OK;
 }
 
 SCCanStatus SimpleCan_B_g431B::Start(void)

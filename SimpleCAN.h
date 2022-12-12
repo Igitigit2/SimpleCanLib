@@ -24,6 +24,15 @@
 #pragma once
 #include "arduino.h"
 
+#if !defined _STM32_DEF_ && !defined _ESP32_
+	// Depending on the board you compile this for, define one (!) of the following two.
+	// For platformio this should be one of the -D options in the platformio.ini file. This section
+	// is for Arduino only and not required on pülatformio.
+
+	// #define _STM32_DEF_
+	// #define _ESP32_
+#endif
+
 enum SCCanSpeed
 {
 	Mbit1 = 10,
@@ -39,7 +48,7 @@ enum SCCanStatus
   CAN_ERROR    = 0x01U,
   CAN_BUSY     = 0x02U,
   CAN_TIMEOUT  = 0x03U,
-  CAN_UNSUPPORTED
+  CAN_UNSUPPORTED = 0x04U
 };
 
 enum SCIdType
@@ -174,7 +183,8 @@ class RxHandlerBase
 };
 
 
-typedef bool (*CanIDFilter) (int CanID);		// Pointer to function which returns true when a CAN ID is valid and false if any commands send to it shall be ignored.
+// Pointer to function which returns true when a CAN ID is valid and false if any commands send to it shall be ignored.
+typedef bool (*CanIDFilter) (int CanID);		
 
 // This is the "driver interface", which provides low level access to the CAN bus.
 class SimpleCan 
@@ -190,7 +200,8 @@ class SimpleCan
 		virtual SCCanStatus DeactivateNotification();
 
 		// Set bus termination on/off (may not be available on all platforms).
-		virtual void SetBusTermination(bool On)=0;
+		// Default is on.
+		virtual SCCanStatus SetBusTermination(bool On)=0;
 
 		// Start and stop all activities. Changing acceptance filters requires stop()
 		// before doing so on some platforms.
@@ -224,6 +235,11 @@ class SimpleCan
 
 		// If a message is waiting in the queue, then get it and dispatch it.
 		virtual bool Loop()=0;
+
+		// Read the status of the device. Result is platform depending.
+		// NOTE: Str must be 0 or have space for at least MAX_STATUS_STR_LEN chars. 
+		#define MAX_STATUS_STR_LEN 64
+		virtual SCCanStatus GetStatus(uint32_t* Status, char* Str) {return CAN_UNSUPPORTED;};
 };
 
 
@@ -251,10 +267,12 @@ class SimpleCANProfile
         virtual void  CANSendText(const char* Text, int CanID);
         virtual void  CANSendFloat(float Val1, int CanID);
         virtual void  CANSendFloat(float Val1, float Val2, int CanID);
-        virtual void  CANSendInt(int Val, int CanID);
-        virtual float  CANGetFloat(const uint8_t* pData);
-        virtual int    CANGetInt(const uint8_t* pData);
-        virtual void   CANGetFloat(const uint8_t* pData, float* pf1, float* pf2);
-        virtual void   CANGetString(const uint8_t* pData, char* pChar, int MaxLen);        
+        virtual void  CANSendInt(int32_t Val, int CanID);
+		virtual void  CANSendInt(int32_t Val1, int32_t Val2, int CanID);
+        virtual float CANGetFloat(const uint8_t* pData);
+        virtual int   CANGetInt(const uint8_t* pData);
+		virtual void  CANGetInt(const uint8_t* pData, int32_t* pInt1, int32_t* pInt2);
+        virtual void  CANGetFloat(const uint8_t* pData, float* pf1, float* pf2);
+        virtual void  CANGetString(const uint8_t* pData, char* pChar, int MaxLen);        
         SimpleCan* Can1;     
 };

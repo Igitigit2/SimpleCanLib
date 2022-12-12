@@ -60,7 +60,7 @@ typedef enum  {
 	__CAN_IRQ_TX=			BIT(1),					/**< \brief TX Interrupt */
 	__CAN_IRQ_ERR=			BIT(2),					/**< \brief Error Interrupt */
 	__CAN_IRQ_DATA_OVERRUN=	BIT(3),					/**< \brief Date Overrun Interrupt */
-	__CAN_IRQ_WAKEUP=		BIT(4),					/**< \brief Wakeup Interrupt */
+	__CAN_IRQ_WAKEUP=		BIT(4),					/**< \brief Wakeup Interrupt, reserved on ESP32 */
 	__CAN_IRQ_ERR_PASSIVE=	BIT(5),					/**< \brief Passive Error Interrupt */
 	__CAN_IRQ_ARB_LOST=		BIT(6),					/**< \brief Arbitration lost interrupt */
 	__CAN_IRQ_BUS_ERR=		BIT(7),					/**< \brief Bus error Interrupt */
@@ -79,7 +79,7 @@ typedef enum  {
 /**
  * CAN controller (SJA1000).
  */
-typedef struct 
+typedef volatile struct 
 {
 	union
 	{
@@ -107,7 +107,10 @@ typedef struct
 	        unsigned int reserved_27:27;            /**< \brief \internal Reserved */
 	    } B;
 	} CMR;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 	        unsigned int RBS:1; 					/**< \brief SR.0 Receive Buffer Status */
 	        unsigned int DOS:1;            			/**< \brief SR.1 Data Overrun Status */
@@ -120,7 +123,10 @@ typedef struct
 	        unsigned int reserved_24:24;            /**< \brief \internal Reserved */
 	    } B;
 	} SR;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 	        unsigned int RI:1; 						/**< \brief IR.0 Receive Interrupt */
 	        unsigned int TI:1;            			/**< \brief IR.1 Transmit Interrupt */
@@ -133,7 +139,10 @@ typedef struct
 	        unsigned int reserved_24:24;            /**< \brief \internal Reserved */
 	    } B;
 	} IR;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 	        unsigned int RIE:1; 					/**< \brief IER.0 Receive Interrupt Enable */
 	        unsigned int TIE:1;            			/**< \brief IER.1 Transmit Interrupt Enable */
@@ -146,15 +155,22 @@ typedef struct
 	        unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} IER;
+
     uint32_t RESERVED0;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 	        unsigned int BRP:6; 					/**< \brief BTR0[5:0] Baud Rate Prescaler */
 	        unsigned int SJW:2;            			/**< \brief BTR0[7:6] Synchronization Jump Width*/
 	        unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} BTR0;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 	        unsigned int TSEG1:4; 					/**< \brief BTR1[3:0] Timing Segment 1 */
 	        unsigned int TSEG2:3;            		/**< \brief BTR1[6:4] Timing Segment 2*/
@@ -164,7 +180,10 @@ typedef struct
 	} BTR1;
 	
 	
-	union{uint32_t U;								/**< \brief Unsigned access */
+#if 0
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int OCMODE:2; 					/**< \brief OCR[1:0] Output Control Mode, see # */
 			unsigned int OCPOL0:1;                  /**< \brief OCR.2 Output Control Polarity 0 */
@@ -176,40 +195,55 @@ typedef struct
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} OCR;		// Not sure if this exists on the ESP32!!!
+#endif
 
-
-    uint32_t RESERVED1[2];
-	union{uint32_t U;								/**< \brief Unsigned access */
+    uint32_t RESERVED1[3];
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int ALC:8; 					/**< \brief ALC[7:0] Arbitration Lost Capture */
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} ALC;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int ECC:8; 					/**< \brief ECC[7:0] Error Code Capture */
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} ECC;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int EWLR:8; 					/**< \brief EWLR[7:0] Error Warning Limit */
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} EWLR;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int RXERR:8; 					/**< \brief RXERR[7:0] Receive Error Counter */
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} RXERR;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int TXERR:8; 					/**< \brief TXERR[7:0] Transmit Error Counter */
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} TXERR;
 
+	// Data and acceptance filter definition
     union 
 	{
         struct 
@@ -240,19 +274,31 @@ typedef struct
 												/**< \brief Function control regs */
     } MBX_CTRL;	
 										/**< \brief Mailbox control */
-	union{uint32_t U;								/**< \brief Unsigned access */
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int RMC:8; 					/**< \brief RMC[7:0] RX Message Counter */
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved Enable */
 	    } B;
 	} RMC;
-	union{uint32_t U;								/**< \brief Unsigned access */
+
+#if 0
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int RBSA:8; 					/**< \brief RBSA[7:0] RX Buffer Start Address  */
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved Enable */
 	    } B;
 	} RBSA;
-	union{uint32_t U;								/**< \brief Unsigned access */
+#endif
+
+	uint32_t RESERVED2;	
+
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
 			unsigned int COD:3; 					/**< \brief CDR[2:0] CLKOUT frequency selector based of fOSC*/
 			unsigned int COFF:1; 					/**< \brief CDR.3 CLKOUT off*/
@@ -263,7 +309,39 @@ typedef struct
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} CDR;
+
+#if 0
     uint32_t IRAM[2];
-}CAN_Module_t;
+#endif
+
+}  CAN_Module_t;
+
+
+/**
+ * @brief 
+ * 
+ * ->> Code taken from Espressif idf and modified!
+
+ * @brief Macro to force a 32-bit read, modify, then write on a peripheral register
+ *
+ * Due to a GCC bug, the compiler may still try to optimize read/writes to peripheral register fields by using 8/16 bit
+ * access, even if they are marked volatile (i.e., -fstrict-volatile-bitfields has no effect).
+ *
+ * For ESP chips, the peripheral bus only allows 32-bit read/writes. The following macro works around the compiler issue
+ * by forcing a 32-bit read/modify/write.
+ *
+ * @note This macro should only be called on register fields of xxx_struct.h type headers, as it depends on the presence
+ *       of a 'val' field of the register union.
+ * @note Current implementation reads into a uint32_t instead of copy base_reg direclty to temp_reg. The reason being
+ *       that C++ does not create a copy constructor for volatile structs.
+ */
+#define HAL_FORCE_MODIFY_U32_REG_FIELD(base_reg, reg_field, field_val)    \
+{                                                           \
+    uint32_t temp_val = base_reg.U;                       \
+    typeof(base_reg) temp_reg;                              \
+    temp_reg.U = temp_val;                                \
+    temp_reg.reg_field = (field_val);                       \
+    (base_reg).U = temp_reg.U;                          \
+}
 
 #endif /* __DRIVERS_CAN_REGDEF_H_ */
