@@ -20,7 +20,6 @@
 	#define PrintLnLog  Serial.println
 	#define PrintLog    Serial.printf
 #endif
-#include "SimpleCan.h"
 
 // #define _ESP32_
 
@@ -29,6 +28,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "ThreadSafeQueue.h"
 
 #include "esp_intr_alloc.h"       
 #include "soc/dport_reg.h"
@@ -37,23 +37,8 @@
 #include "driver/gpio.h"
 
 #include "ESP32_CAN_regdef.h"
-#include "ThreadSafeQueue.h"
+#include "SimpleCan.h"
 
-#define TX_QUEUE_SIZE	8		// Max number of mesages stored in Tx buffer
-
-class CANTxMessage
-{
-	public:
-		int CanID;
-		uint8_t Data[8];
-		int Size;
-		bool EFF;
-		bool RTR;
-};
-
-
-
-SafeQueue<CANTxMessage> TxQueue(TX_QUEUE_SIZE);
 
 static  void CAN_isr(void *arg_p);
 
@@ -138,27 +123,57 @@ static RxHandlerESP32 Can1RxHandler(8);
 class SimpleCan_ESP32_DevC : public SimpleCan
 {
 	public:
+
 		SimpleCan_ESP32_DevC(gpio_num_t _TxPin=GPIO_NUM_5, gpio_num_t _RxPin=GPIO_NUM_35);
 
-		bool SendMessage(const uint8_t* pData, int NumBytes, int CanID, bool UseEFF=false);
-		static void SendNextMessageFromQueue();
+		//*******************************************************
+		//*** Implementation of pure virtual methods ************
+		
+		// Initialize the CAN controller
+		SCCanStatus Init(SCCanSpeed speed, CanIDFilter IDFilterFunc=0);
 
+		// Register/deregister a callback function for message received events.
+		// The notification handler is platform specific, that is why it's needed here.
+		// These functions may be overloaded if required.
+		SCCanStatus ActivateNotification(uint16_t dataLength, RxCallback callback, void* userData);
+		SCCanStatus DeactivateNotification();
+
+		// Set bus termination on/off (may not be available on all platforms).
+		// Default is on.
+		SCCanStatus SetBusTermination(bool On);
+
+		// Start and stop all activities. Changing acceptance filters requires stop()
+		// before doing so on some platforms.
+		SCCanStatus Start();
+		SCCanStatus Stop();
+
+		// Modify the global filter to reject everything which is not matching the other filters and to accept all remote frames. 
+		SCCanStatus ConfigGlobalFilter();
+
+		// Modify the acceptance filter. This may be forbidden while the controller is active.
+		SCCanStatus ConfigFilter(FilterDefinition *filterDef);
+
+
+		// Needs to be called at least once after a message has been placed in the TX queue.
+		// It will start sending messages from the queue to the CAN bus, until the TX queue is emty.
+		bool TriggerSending() { return SendNextMessageFromQueue();};
+
+
+		//*******************************************************
+		//*** Other methods ************
+
+
+		// Send one message from the TX queue to the CAN bus
+		static bool SendNextMessageFromQueue();
+
+		// Send one RTR frame to the CAN bus.
 		// Sending an RTR frame is exactly the same as SendMessage(), except for setting the RTR bit in the header
 		// and to not send any data bytes as payload. NumBytes/DLC must be set to the number of bytes expected in the
 		// return payload. The answer to the RTR frame will be received and handled like any other CAN message.
-		bool RequestMessage(int NumBytes, int CanID, bool UseEFF=false);
+		// bool RequestMessage(int NumBytes, int CanID, bool UseEFF=false);
 		static void SendRequestMessage(int NumBytes, int CanID, bool UseEFF=false);
 
-
-		SCCanStatus SetBusTermination(bool On);
-		SCCanStatus Init(SCCanSpeed speed, CanIDFilter IDFilterFunc=0);
-		SCCanStatus ConfigFilter(FilterDefinition *filterDef);
 		SCCanStatus ConfigGlobalFilter(uint32_t nonMatchingStd, uint32_t nonMatchingExt, uint32_t rejectRemoteStd, uint32_t rejectRemoteExt);
-		SCCanStatus ConfigGlobalFilter();
-		SCCanStatus ActivateNotification(uint16_t dataLength, RxCallback callback, void* userData);
-		SCCanStatus DeactivateNotification();
-		SCCanStatus Start();
-		SCCanStatus Stop();
 		bool Loop();
 
 		int GetTxErrors(); 
@@ -221,7 +236,6 @@ static  void CAN_isr(void *arg_p)
 		SimpleCan_ESP32_DevC::SendNextMessageFromQueue();
     }
 	
-
  #if 0
     // Handle error interrupts.
     if (interrupt & __CAN_IRQ_ERR)
@@ -242,6 +256,7 @@ static  void CAN_isr(void *arg_p)
     if (interrupt & __CAN_IRQ_WAKEUP)
 		PrintLnLog("CAN ERROR: __CAN_IRQ_WAKEUP");
 #endif
+
     // Handle error interrupts.
     if (interrupt & (__CAN_IRQ_ERR						//0x4
                       | __CAN_IRQ_DATA_OVERRUN			//0x8
@@ -526,87 +541,23 @@ SCCanStatus SimpleCan_ESP32_DevC::DeactivateNotification()
 
 #endif
 
-bool SimpleCan_ESP32_DevC::SendMessage(const uint8_t* pData, int NumBytes, int CanID, bool UseEFF)
-{
-	// Skip command if sender ID is disabled.
-	if (SendIDFilterFunc && !SendIDFilterFunc(CanID)) return true; 
-
-	// PrintLog("CAN: Queueing message with ID 0x%x, %d messages in TX queue.\n", CanID, TxQueue.NumElements);
-
-	CANTxMessage Msg;
-	Msg.CanID = CanID;
-	Msg.EFF = UseEFF;
-	Msg.Size = NumBytes;
-	Msg.RTR = false;
-	memcpy(Msg.Data, pData, NumBytes);
-	if (TxQueue.NumElements<TX_QUEUE_SIZE)
-		TxQueue.Enqueue(Msg);
-	else 
-	{
-		PrintLnLog("CAN Error: Tx buffer overrun");
-		
-		// Kick sending of messages from buffer anyway.
-		if(MODULE_CAN->SR.B.TBS)
-			SendNextMessageFromQueue();
-		return false;
-	}
-	
-	// Kick sending of messages from buffer.
-	
-	if(MODULE_CAN->SR.B.TBS)
-		SendNextMessageFromQueue();
-
-	return true;
-}
-
-
-// Sending an RTR frame is exactly the same as SendMessage(), except for setting the RTR bit in the header
-// and to not send any data bytes as payload. NumBytes/DLC must be set to the number of bytes expected in the
-// return payload. The answer to the RTR frame will be received and handled like any other CAN message.
-bool SimpleCan_ESP32_DevC::RequestMessage(int NumBytes, int CanID, bool UseEFF)
-{
-	// Skip command if sender ID is disabled.
-	if (SendIDFilterFunc && !SendIDFilterFunc(CanID)) return true; 
-
-	// PrintLog("CAN: Queueing RTR message with ID 0x%x, %d messages in TX queue.\n", CanID, TxQueue.NumElements);
-
-	CANTxMessage Msg;
-	Msg.CanID = CanID;
-	Msg.EFF = UseEFF;
-	Msg.Size = NumBytes;
-	Msg.RTR = true;
-	if (TxQueue.NumElements<TX_QUEUE_SIZE)
-		TxQueue.Enqueue(Msg);
-	else 
-	{
-		PrintLnLog("CAN Error: Tx buffer overrun");
-		
-		// Kick sending of messages from buffer anyway.
-		if(MODULE_CAN->SR.B.TBS)
-			SendNextMessageFromQueue();
-		return false;
-	}
-	
-	// Kick sending of messages from buffer.
-	if(MODULE_CAN->SR.B.TBS)
-		SendNextMessageFromQueue();
-
-	return true;
-}
 
 // ISR, absolutely no printing to serial!!
-void SimpleCan_ESP32_DevC::SendNextMessageFromQueue()
+bool SimpleCan_ESP32_DevC::SendNextMessageFromQueue()
 {
 
 	// Restart if bus-off state.
 	if (MODULE_CAN->SR.B.BS==1)
 		// Release Reset Mode if it was set.
 		MODULE_CAN->MOD.B.RM = 0;
+	
+	if(!MODULE_CAN->SR.B.TBS)
+		return true;
 
 	CANTxMessage Msg;
 	if (!TxQueue.Dequeue(&Msg))
 		// Nothing to send...
-		return;
+		return true;
 
 	// PrintLog("CAN (ESP32): Sending %d bytes with ID 0x%x as %s frame\n", Msg.Size, Msg.CanID, Msg.EFF?"EFF":"std");
 
@@ -657,6 +608,8 @@ void SimpleCan_ESP32_DevC::SendNextMessageFromQueue()
 		MODULE_CAN->CMR.B.TR=1;
 		// MODULE_CAN->CMR.B.SRX=1;
 	}
+
+	return true;
 }
 
 

@@ -24,6 +24,9 @@
 #pragma once
 #include "arduino.h"
 
+#define RX_QUEUE_SIZE	16
+#define TX_QUEUE_SIZE	8
+
 #if !defined _STM32_DEF_ && !defined _ESP32_
 	// Depending on the board you compile this for, define one (!) of the following two.
 	// For platformio this should be one of the -D options in the platformio.ini file. This section
@@ -32,6 +35,13 @@
 	// #define _STM32_DEF_
 	// #define _ESP32_
 #endif
+
+#if defined(_ESP32_)
+	#include "freertos/FreeRTOS.h"
+	#include "freertos/queue.h"
+#endif
+#include "ThreadSafeQueue.h"
+
 
 enum SCCanSpeed
 {
@@ -145,6 +155,25 @@ class SimpleCanRxHeader
 
 
 
+class CANTxMessage
+{
+	public:
+		int CanID;
+		uint8_t Data[8];
+		int Size;
+		bool EFF;
+		bool RTR;
+};
+
+
+class CanRxMessage
+{
+	public:
+		SimpleCanRxHeader SCHeader;
+		uint8_t Data[8];
+};
+
+
 
 //--------------------------------------------------------------------------------------
 // Abstract class which must be implemented by a platform specific version.
@@ -190,6 +219,9 @@ typedef bool (*CanIDFilter) (int CanID);
 class SimpleCan 
 {
 	public:
+		//*************************************************************************************
+		//*** Pure virtual methods, which require hardware specific implementation ************
+		
 		// Initialize the CAN controller
 		virtual SCCanStatus Init(SCCanSpeed speed, CanIDFilter IDFilterFunc=0)=0;
 
@@ -197,7 +229,7 @@ class SimpleCan
 		// The notification handler is platform specific, that is why it's needed here.
 		// These functions may be overloaded if required.
 		virtual SCCanStatus ActivateNotification(uint16_t dataLength, RxCallback callback, void* userData)=0;
-		virtual SCCanStatus DeactivateNotification();
+		virtual SCCanStatus DeactivateNotification()=0;
 
 		// Set bus termination on/off (may not be available on all platforms).
 		// Default is on.
@@ -214,17 +246,30 @@ class SimpleCan
 		// Modify the acceptance filter. This may be forbidden while the controller is active.
 		virtual SCCanStatus ConfigFilter(FilterDefinition *filterDef)=0;
 
+		// Start sending messages from the queue to the CAN bus, until the TX queue is emty.
+		virtual bool TriggerSending()=0;
+
+
+		//*****************************************************
+		//*** Methods with default implementation *************
 		
-		// Send a message to the CAN bus.
+		// Send a message to the TX FIFO and trigger sending to CAN bus.
 		// If UseEFF is set, extended frame format will be used, standard frame format otherwise.
 		// Returns true on success.
-		virtual bool SendMessage(const uint8_t* pData, int NumBytes, int CanID, bool UseEFF=false)=0;
+		virtual bool SendMessage(const uint8_t* pData, int NumBytes, int CanID, bool UseEFF=false);
 
 
+		// Send an RTR frame to TX Fifo and trigger sending to CAN bus
 		// Sending an RTR frame is exactly the same as SendMessage(), except for setting the RTR bit in the header
 		// and to not send any data bytes as payload. NumBytes/DLC must be set to the number of bytes expected in the
 		// return payload. The answer to the RTR frame will be received and handled like any other CAN message.
 		virtual bool RequestMessage(int NumBytes, int CanID, bool UseEFF=false);
+
+		// Set a filter to accept all incoming messages
+		virtual SCCanStatus AcceptAllMessages(); 
+
+		// Set a filter to deny all incoming messages (except for CAN ID 0xFFFF)
+		SCCanStatus DenyAllMessages();
 
 		// Return the number of registered transmit errors or -1 if not available.
 		virtual int GetTxErrors() {return -1;};
@@ -240,6 +285,10 @@ class SimpleCan
 		// NOTE: Str must be 0 or have space for at least MAX_STATUS_STR_LEN chars. 
 		#define MAX_STATUS_STR_LEN 64
 		virtual SCCanStatus GetStatus(uint32_t* Status, char* Str) {return CAN_UNSUPPORTED;};
+
+
+		static SafeQueue<CanRxMessage> RxQueue;
+		static SafeQueue<CANTxMessage> TxQueue;
 };
 
 
@@ -273,6 +322,6 @@ class SimpleCANProfile
         virtual int   CANGetInt(const uint8_t* pData);
 		virtual void  CANGetInt(const uint8_t* pData, int32_t* pInt1, int32_t* pInt2);
         virtual void  CANGetFloat(const uint8_t* pData, float* pf1, float* pf2);
-        virtual void  CANGetString(const uint8_t* pData, char* pChar, int MaxLen);        
+        virtual void  CANGetString(const uint8_t* pData, char* pChar, int MaxLen);      
         SimpleCan* Can1;     
 };

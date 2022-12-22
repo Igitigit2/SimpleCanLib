@@ -8,18 +8,106 @@
 
 #include <arduino.h>
 #include "SimpleCAN.h"
-#include "ThreadSafeQueue.h"
 
-#define RX_QUEUE_SIZE	16		// Max number of received CAN messages stored max in Rx queue
 
-class CanRxMessage
+SafeQueue<CanRxMessage> SimpleCan::RxQueue(RX_QUEUE_SIZE);
+SafeQueue<CANTxMessage> SimpleCan::TxQueue(TX_QUEUE_SIZE);
+
+// Set a filter to accept all incoming messages
+SCCanStatus SimpleCan::AcceptAllMessages()
 {
-	public:
-		SimpleCanRxHeader SCHeader;
-		uint8_t Data[8];
-};
+	SCCanStatus rc=CAN_OK;
+	// Configure Rx filter
+	FilterDefinition FilterConfig;
+	FilterConfig.IdType = CAN_STDID;
+	FilterConfig.FilterIndex = 0;
+	FilterConfig.FilterType = CAN_FILTER_MASK;
+	FilterConfig.FilterConfig = CAN_FILTER_TO_RXFIFO0;
+	FilterConfig.FilterID1 = 0x0;
+	FilterConfig.FilterID2 = 0x0;
+	rc = ConfigFilter(&FilterConfig);
+	return rc;
+}
 
-SafeQueue<CanRxMessage> RxQueue(RX_QUEUE_SIZE);
+// Set a filter to deny all incoming messages (except for CAN ID 0xFFFF)
+SCCanStatus SimpleCan::DenyAllMessages()
+{
+	SCCanStatus rc=CAN_OK;
+	// Configure Rx filter
+	FilterDefinition FilterConfig;
+	FilterConfig.IdType = CAN_STDID;
+	FilterConfig.FilterIndex = 0;
+	FilterConfig.FilterType = CAN_FILTER_MASK;
+	FilterConfig.FilterConfig = CAN_FILTER_TO_RXFIFO0;
+	FilterConfig.FilterID1 = 0xffff;
+	FilterConfig.FilterID2 = 0xffff;
+	rc = ConfigFilter(&FilterConfig);
+	return rc;
+}
+
+bool SimpleCan::SendMessage(const uint8_t* pData, int NumBytes, int CanID, bool UseEFF)
+{
+	// Skip command if sender ID is disabled.
+	// if (SendIDFilterFunc && !SendIDFilterFunc(CanID)) return true; 
+
+	// Serial.printf("CAN: Queueing message with ID 0x%x, %d messages in TX queue.\n", CanID, TxQueue.NumElements);
+
+	CANTxMessage Msg;
+	Msg.CanID = CanID;
+	Msg.EFF = UseEFF;
+	Msg.Size = NumBytes;
+	Msg.RTR = false;
+	memcpy(Msg.Data, pData, NumBytes);
+	if (TxQueue.NumElements<TX_QUEUE_SIZE)
+		TxQueue.Enqueue(Msg);
+	else 
+	{
+		Serial.println("CAN Error: Tx buffer overrun");
+		
+		// Kick sending of messages from buffer anyway.
+		TriggerSending();
+		return false;
+	}
+	
+	// Kick sending of messages from buffer.
+	
+	TriggerSending();
+
+	return true;
+}
+
+
+// Sending an RTR frame is exactly the same as SendMessage(), except for setting the RTR bit in the header
+// and to not send any data bytes as payload. NumBytes/DLC must be set to the number of bytes expected in the
+// return payload. The answer to the RTR frame will be received and handled like any other CAN message.
+bool SimpleCan::RequestMessage(int NumBytes, int CanID, bool UseEFF)
+{
+	// Skip command if sender ID is disabled.
+	// if (SendIDFilterFunc && !SendIDFilterFunc(CanID)) return true; 
+
+	// PrintLog("CAN: Queueing RTR message with ID 0x%x, %d messages in TX queue.\n", CanID, TxQueue.NumElements);
+
+	CANTxMessage Msg;
+	Msg.CanID = CanID;
+	Msg.EFF = UseEFF;
+	Msg.Size = NumBytes;
+	Msg.RTR = true;
+	if (TxQueue.NumElements<TX_QUEUE_SIZE)
+		TxQueue.Enqueue(Msg);
+	else 
+	{
+		Serial.println("CAN Error: Tx buffer overrun");
+		
+		// Kick sending of messages from buffer anyway.
+		TriggerSending();
+		return false;
+	}
+	
+	// Kick sending of messages from buffer.
+	TriggerSending();
+
+	return true;
+}
 
 
 // This is the message hadler for the profile!
@@ -36,7 +124,6 @@ SimpleCANProfile::SimpleCANProfile(SimpleCan* _pCan)
 	Can1 = _pCan;
 }
 
-
 void SimpleCANProfile::Init(CanIDFilter IDFilterFunc)
 {
 	Serial.println(Can1->Init(SCCanSpeed::Mbit1, IDFilterFunc) == CAN_OK
@@ -46,20 +133,9 @@ void SimpleCANProfile::Init(CanIDFilter IDFilterFunc)
 
 	SCCanStatus rc=CAN_OK;
 
-	#if 0
-	-> This should go into the application code, since it is specific to the CAN IDs used by the application! 
-	// Configure Rx filter
-	FilterDefinition FilterConfig;
-	FilterConfig.IdType = CAN_STDID;
-	FilterConfig.FilterIndex = 0;
-	FilterConfig.FilterType = CAN_FILTER_MASK;
-	FilterConfig.FilterConfig = CAN_FILTER_TO_RXFIFO0;
-	FilterConfig.FilterID1 = 0x0;
-	FilterConfig.FilterID2 = 0x700;
-	rc = Can1->ConfigFilter(&FilterConfig);
-	#endif
 
 	if (rc==CAN_OK) rc = Can1->ConfigGlobalFilter();
+	if (rc==CAN_OK) rc = Can1->AcceptAllMessages();
 	if (rc==CAN_OK) rc = Can1->ActivateNotification(8, ::HandleCanMessage, this);			
 	if (rc!=CAN_OK)	Serial.println("CAN initialization error!");
 
@@ -183,8 +259,8 @@ void RxHandlerBase::Notify(/*...*/)
     // Let the hardware know the frame has been read.
 	ReleaseRcvBuffer();
 
-	if (RxQueue.NumElements<16)
-		RxQueue.Enqueue(Msg);
+	if (SimpleCan::RxQueue.NumElements<16)
+		SimpleCan::RxQueue.Enqueue(Msg);
 }
 
 
@@ -196,7 +272,7 @@ bool RxHandlerBase::Loop()
 	if (ProfileCallback != NULL)
 	{
 		CanRxMessage Msg;
- 		if (RxQueue.Dequeue(&Msg))
+ 		if (SimpleCan::RxQueue.Dequeue(&Msg))
 		{
 			// Serial.println("Read message from buffer");
 			// --- Convert the header and call the user provided RX handler.

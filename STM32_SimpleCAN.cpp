@@ -45,8 +45,8 @@
 
 
 #include <arduino.h>
+#include "ThreadSafeQueue.h"
 #include "SimpleCan.h"
-
 
 // #define _STM32_DEF_
 
@@ -117,34 +117,60 @@ class RxHandlerSTM32 : public RxHandlerBase
 };
 
 
-
 class SimpleCan_B_g431B : public SimpleCan
 {
 	public:
 		SimpleCan_B_g431B();
-		bool SendMessage(const uint8_t* pData, int NumBytes, int CanID, bool UseEFF=false);
 
-		// WARNING: RTR FRAMES ARE COMPLETELY UNTESTED!!
+
+		//*******************************************************
+		//*** Implementation of pure virtual methods ************
+		
+		// Initialize the CAN controller
+		SCCanStatus Init(SCCanSpeed speed, CanIDFilter IDFilterFunc=0);
+
+		// Register/deregister a callback function for message received events.
+		// The notification handler is platform specific, that is why it's needed here.
+		// These functions may be overloaded if required.
+		SCCanStatus ActivateNotification(uint16_t dataLength, RxCallback callback, void* userData);
+		SCCanStatus DeactivateNotification();
+
+		// Set bus termination on/off (may not be available on all platforms).
+		// Default is on.
+		SCCanStatus SetBusTermination(bool On);
+
+		// Start and stop all activities. Changing acceptance filters requires stop()
+		// before doing so on some platforms.
+		SCCanStatus Start();
+		SCCanStatus Stop();
+
+		// Modify the global filter to reject everything which is not matching the other filters and to accept all remote frames. 
+		SCCanStatus ConfigGlobalFilter();
+
+		// Modify the acceptance filter. This may be forbidden while the controller is active.
+		SCCanStatus ConfigFilter(FilterDefinition *filterDef);
+
+		// Start sending messages from the queue to the CAN bus, until the TX queue is emty.
+		bool TriggerSending() { return SendNextMessageFromQueue();};
+
+
+		//*******************************************************
+		//*** Other methods ************
+
+		static bool SendNextMessageFromQueue();
+
 		// Sending an RTR frame is exactly the same as SendMessage(), except for setting the RTR bit in the header
 		// and to not send any data bytes as payload. NumBytes/DLC must be set to the number of bytes expected in the
 		// return payload. The answer to the RTR frame will be received and handled like any other CAN message.
-		bool RequestMessage(int NumBytes, int CanID, bool UseEFF=false);
+		// bool RequestMessage(int NumBytes, int CanID, bool UseEFF=false);
+		static bool SendRequestMessage(int NumBytes, int CanID, bool UseEFF);
 
-		SCCanStatus SetBusTermination(bool On);
-		SCCanStatus Init(SCCanSpeed speed, CanIDFilter IDFilterFunc=0);
-		SCCanStatus ConfigFilter(FilterDefinition *filterDef);
 		SCCanStatus ConfigGlobalFilter(uint32_t nonMatchingStd, uint32_t nonMatchingExt, uint32_t rejectRemoteStd, uint32_t rejectRemoteExt);
-		SCCanStatus ConfigGlobalFilter();
-		SCCanStatus ActivateNotification(uint16_t dataLength, RxCallback callback, void* userData);
-		SCCanStatus DeactivateNotification();
-		SCCanStatus Start();
-		SCCanStatus Stop();
 		SCCanStatus AddMessageToTxFifoQ(FDCAN_TxHeaderTypeDef *pTxHeader, uint8_t *pTxData);
 		bool Loop();
 
 		static FDCAN_HandleTypeDef _hfdcan1;
 		uint8_t TxData[8];
-		FDCAN_TxHeaderTypeDef TxHeader;
 
 		static RxHandlerSTM32 *RxHandlerP;		
 
@@ -202,12 +228,11 @@ bool RxHandlerSTM32::CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, i
 	// Nothing to do for STM32;	
 }
 
-
-
-// will be called from: HAL_FDCAN_Init
+// will be called from: HAL_FDCAN_Init (all defined as weak functiions in HAL).
 extern "C" void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan);
 extern "C" void FDCAN1_IT0_IRQHandler();
 extern "C" void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs);
+extern "C" void HAL_FDCAN_TxBufferCompleteCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t BufferIndexes);
 
 FDCAN_HandleTypeDef SimpleCan_B_g431B::_hfdcan1 = { };
 
@@ -323,7 +348,7 @@ SCCanStatus SimpleCan_B_g431B::ActivateNotification(uint16_t dataLength, RxCallb
 	RxHandlerP = &Can1RxHandler;
 	RxHandlerP->SetProfileCallback(dataLength, callback, userData);
 	Serial.println("CAN: notifications activated");
-	return HALSTATUS2CANSTATUS(HAL_FDCAN_ActivateNotification(&_hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0));
+	return HALSTATUS2CANSTATUS(HAL_FDCAN_ActivateNotification(&_hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE | FDCAN_IT_TX_COMPLETE, FDCAN_TX_BUFFER0));
 }
 
 SCCanStatus SimpleCan_B_g431B::DeactivateNotification()
@@ -391,6 +416,7 @@ void FDCAN1_IT0_IRQHandler(void)
 	HAL_FDCAN_IRQHandler(&SimpleCan_B_g431B::_hfdcan1);
 }
 
+
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 {
 	// Serial.println("cb");
@@ -405,60 +431,86 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 }
 
 
-bool SimpleCan_B_g431B::SendMessage(const uint8_t* pData, int NumBytes, int CanID, bool UseEFF)
+void HAL_FDCAN_TxBufferCompleteCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t BufferIndexes)
 {
-	// Serial.printf("CAN: Sending %d bytes with ID 0x%x\n", NumBytes, CanID);
+	// If there are still data in the TxQueue, shuffle them to the HAL Tx queue
+	// Serial.println("HAL_FDCAN_TxBufferCompleteCallback");
+	SimpleCan_B_g431B::SendNextMessageFromQueue();
+}
 
-	// Skip command if sender ID is disabled.
-	if ( SendIDFilterFunc && !SendIDFilterFunc(CanID) ) 
-		return true; 
-
-	bool TxOk=true;
-	TxHeader.Identifier = CanID;
-	TxHeader.IdType = UseEFF ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
-	TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-	TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-	TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
-	TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
-	TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-	TxHeader.MessageMarker = 0;
-	switch(NumBytes)
+bool SimpleCan_B_g431B::SendNextMessageFromQueue()
+{
+	// Serial.println("CAN: SendNextMessageFromQueue)");
+	if(TxQueue.NumElements && !(_hfdcan1.Instance->TXFQS & FDCAN_TXFQS_TFQF))
 	{
-		case 0: TxHeader.DataLength = FDCAN_DLC_BYTES_0; break;
-		case 1: TxHeader.DataLength = FDCAN_DLC_BYTES_1; break;
-		case 2: TxHeader.DataLength = FDCAN_DLC_BYTES_2; break;
-		case 3: TxHeader.DataLength = FDCAN_DLC_BYTES_3; break;
-		case 4: TxHeader.DataLength = FDCAN_DLC_BYTES_4; break;
-		case 5: TxHeader.DataLength = FDCAN_DLC_BYTES_5; break;
-		case 6: TxHeader.DataLength = FDCAN_DLC_BYTES_6; break;
-		case 7: TxHeader.DataLength = FDCAN_DLC_BYTES_7; break;
-		case 8: TxHeader.DataLength = FDCAN_DLC_BYTES_8; break;
-		default: Serial.print("CAN: Invalid message length!\n"); 
-			TxOk = false;
+		CANTxMessage Msg;
+		if (!TxQueue.Dequeue(&Msg))
+			// Nothing to send...
+			return true;
+
+		// Serial.printf("CAN (STM32): Sending %d bytes with ID 0x%x as %s frame\n", Msg.Size, Msg.CanID, Msg.EFF?"EFF":"std");
+
+		if (Msg.RTR)
+		{
+			// The queued message was an RTR
+			SendRequestMessage(Msg.Size, Msg.CanID, Msg.EFF);
+		}
+		else
+		{
+			// Skip command if sender ID is disabled.
+			if ( SendIDFilterFunc && !SendIDFilterFunc(Msg.CanID) ) 
+				return true; 
+
+			bool TxOk=true;
+			FDCAN_TxHeaderTypeDef TxHeader;
+			TxHeader.Identifier = Msg.CanID;
+			TxHeader.IdType = Msg.EFF ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
+			TxHeader.TxFrameType = FDCAN_DATA_FRAME;
+			TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+			TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
+			TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
+			TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+			TxHeader.MessageMarker = 0;
+			switch(Msg.Size)
+			{
+				case 0: TxHeader.DataLength = FDCAN_DLC_BYTES_0; break;
+				case 1: TxHeader.DataLength = FDCAN_DLC_BYTES_1; break;
+				case 2: TxHeader.DataLength = FDCAN_DLC_BYTES_2; break;
+				case 3: TxHeader.DataLength = FDCAN_DLC_BYTES_3; break;
+				case 4: TxHeader.DataLength = FDCAN_DLC_BYTES_4; break;
+				case 5: TxHeader.DataLength = FDCAN_DLC_BYTES_5; break;
+				case 6: TxHeader.DataLength = FDCAN_DLC_BYTES_6; break;
+				case 7: TxHeader.DataLength = FDCAN_DLC_BYTES_7; break;
+				case 8: TxHeader.DataLength = FDCAN_DLC_BYTES_8; break;
+				default: Serial.print("CAN: Invalid message length!\n"); 
+					TxOk = false;
+			}
+
+			if (TxOk)
+			{
+				TxOk = (HALSTATUS2CANSTATUS(HAL_FDCAN_AddMessageToTxFifoQ(&_hfdcan1, &TxHeader, Msg.Data)) == CAN_OK);
+			}
+			if (!TxOk)
+				Serial.printf("CAN: sending message failed (0x%lx)!\n", _hfdcan1.ErrorCode);
+		}
 	}
 
-	if (TxOk)
-	{
-		memcpy(TxData, pData, NumBytes);
-		TxOk = (AddMessageToTxFifoQ(&TxHeader, TxData) == CAN_OK);
-	}
-	if (!TxOk)
-		Serial.print("CAN: sending message failed!\n");
-	
 	return true;
 }
 
-
-// WARNING: THIS IS COMPLETELY UNTESTED!!
 // Sending an RTR frame is exactly the same as SendMessage(), except for setting the RTR bit in the header
 // and to not send any data bytes as payload. NumBytes/DLC must be set to the number of bytes expected in the
 // return payload. The answer to the RTR frame will be received and handled like any other CAN message.
-bool SimpleCan_B_g431B::RequestMessage(int NumBytes, int CanID, bool UseEFF)
+// So, in principle, no data array is required, but unfortunately the STM32 HAL routines expect it...
+uint8_t DummyData[8];
+
+bool SimpleCan_B_g431B::SendRequestMessage(int NumBytes, int CanID, bool UseEFF)
 {
 	// Skip command if sender ID is disabled.
 	if (SendIDFilterFunc && !SendIDFilterFunc(CanID)) return true; 
 
 	bool TxOk=true;
+	FDCAN_TxHeaderTypeDef TxHeader;
 	TxHeader.Identifier = CanID;
 	TxHeader.IdType = UseEFF ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
 	TxHeader.TxFrameType = FDCAN_REMOTE_FRAME;
@@ -484,8 +536,7 @@ bool SimpleCan_B_g431B::RequestMessage(int NumBytes, int CanID, bool UseEFF)
 
 	if (TxOk)
 	{
-		//memcpy(TxData, pData, NumBytes);
-		TxOk = (AddMessageToTxFifoQ(&TxHeader, TxData) == CAN_OK);
+		TxOk = (HALSTATUS2CANSTATUS(HAL_FDCAN_AddMessageToTxFifoQ(&_hfdcan1, &TxHeader, DummyData)) == CAN_OK);
 	}
 
 	if (!TxOk)
