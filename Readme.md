@@ -9,7 +9,7 @@ SimpleCAN is library intended to run on MCUs with integrated CAN controller. It 
 Some basic understanding of CAN bus concepts is expected in order to understand and best use this library.
 
 ## Some definitions and concepts
-CAN bus as such is completely ignorant of any application layer. It only defines how data packets are transmitted between endpoints. All data packets are broadcasted and there is no distinction between a master and subordinated devices on the bus. All devices may send at any time and all devices can receive all data packets. In order to identify the content of packets, some bits are used as an identifier, the so-called CAN ID. it is important to understand that CAN IDs are application specific and they do not per se represent addresses of devices there is no such concept on CAN bus). However, since CAN IDs can be freely selected, it is of course possible to use some of the ID's bits as a kind of address. By assigning a meaning to individual CAN IDs you start creating what in the context of SimpleCAN is called an application specific CAN profile. for example you could say, that CAN id 35 followed by a number x requests all motors to run at x rpm. reversely, each motor could report its temperature by using CAN ID 40 + m, where m is a motor specific index. Such concept also allow the implementation of client - server concepts on an application level.
+CAN bus as such is completely ignorant of any application layer. It only defines how data packets are transmitted between endpoints. All data packets are broadcasted and there is no distinction between a master and subordinated devices on the bus. All devices may send at any time and all devices can receive all data packets. In order to identify the content of packets, some bits are used as an identifier, the so-called CAN ID. it is important to understand that CAN IDs are application specific and they do not per se represent addresses of devices (there is no such concept on CAN bus). However, since CAN IDs can be freely selected, it is of course possible to use some of the ID's bits as a kind of address. By assigning a meaning to individual CAN IDs you start creating what in the context of SimpleCAN is called an application specific CAN profile. For example you could say, that CAN id 35 followed by a number x requests all motors to run at x rpm. reversely, each motor could report its temperature by using CAN ID 40 + m, where m is a motor specific index. Such a concept also allows the implementation of client - server concepts on an application level.
 
 
 ## Installation
@@ -21,7 +21,7 @@ CAN bus as such is completely ignorant of any application layer. It only defines
 3. Open PlatformIO and add the folder \PlatformIO\Projects\CANTest to your projects.
 4. Compile CANTest for your specific boards and download it to two boards.
 5. Connect the CAN bus of the two boards and start them up.
-6. If serial monitor is connected to oine of the two boards, you should see reports of incoming and sent messages.
+6. If serial monitor is connected to one of the two boards, you should see reports of incoming and sent messages.
 
 
 ## How it works
@@ -31,16 +31,16 @@ On top of the low level routines sits the CAN profile. The base class for applic
 
 The example profile CANPingPong is derived from SimpleCANProfile and shows how to do this. As you can see, depending on the CAN ID, the implementation for HandleCanMessage() simply dispatches messages to other functions which are defined by an abstract class PingPongNotificationsFromCAN. A pointer to a class derived from PingPongNotificationsFromCAN is passed to the constructor of CANPingPong.
 
-In the main code (CANTest.cpp), very few things are required. most important is the class class RxFromCAN, which implements the interface defined by PingPongNotificationsFromCAN. All incomming messages which are handled by the profile end up here. In the example, we simply print the received data, but in a real application, you would of course do somethimg more sophisticated.
-
+In the main code (CANTest.cpp), very few things are required. most important is the class RxFromCAN, which implements the interface defined by PingPongNotificationsFromCAN. All incomming messages which are handled by the profile end up here. In the example, we simply print the received data, but in a real application, you would of course do something more sophisticated.
 
 Two important objects are declared in the main program, which are:
 	RxFromCAN CANBroker, which is the object handling incomming messages, and
 	CANPingPong CANDevice(CreateCanLib(), &CANBroker), which implements our CAN profile (and all the rest).
 
-In the loop function messages are sent to the CAN bus by calling any of the CANDevice.CANSendXxxx() functions provided by our CAN profile. Most important however is that the loop functions calls 	CANDevice.Can1->Loop()
+In the loop function messages are sent to the CAN bus by calling any of the CANDevice.CANSendXxxx() functions provided by our CAN profile. Most important however is that the loop functions calls CANDevice.Can1->Loop()
 regularly in order to pump messages through the queues.
 
+The reason for using the broker mechanism and the abstract classes is that I wanted to have the entire profile definition (in my case SimpleFOC running on an STM32 CPU and a higher level controller on an ESP32) in the same profile definition header file. Without the abstract classes and the broker this would have meant to have all the SimpleFOC stuff included on the ESP32 as well, something I clearly wantd to avoid. Of course, if you don't need/want all this, you can work directly on the lower level classes, e.g. SimpleCANProfile.
 
 ## How to use SimpleCAN in your own application
 In order to use SimpleCAN in your own applications, you need to: 
@@ -53,10 +53,10 @@ In the following sections we will outline those steps.
 6. Make sure to have the correct -D options for the compiler and your platform. You are safe if you use the ones from the CANTest project's platformio.ini file..
 
 ### Define your own CAN profile
-The definition of a CAN profile is closely tied to the actual application and there ar very few restrictions of what you may do, apart from the low level CAN restrictions, especially the size of CAN IDs, speed and the size of messages. Considerations you should start with are:
+The definition of a CAN profile is closely tied to the actual application and there are very few restrictions of what you may do, apart from the low level CAN restrictions, especially the size of CAN IDs, speed and the size of messages. Considerations you should start with are:
 - Do I need to address individual devices? 
 - Can I use the same profile and broker classes on all devices or do I need different profile classes and brokers which share the same CAN IDs?
-For our PingPong example the answers are easy, all devices are identical, so we only need one set of profile and broker class and we do not need addresses for devices. We simply start by defining a few CAN IDs which we will use as descriptors for the content of messages:
+For our PingPong example the answers are easy, all devices are identical, so we only need one set of profile and broker class and we do not need specific addresses for devices (but they must be unique nevertheless). We simply start by defining a few CAN IDs which we will use as descriptors for the content of messages:
 
 
 ```
@@ -65,7 +65,16 @@ For our PingPong example the answers are easy, all devices are identical, so we 
 #define CANID_PP_FLOAT   3       // Message is a floating point value
 #define CANID_PP_RTRINT  4       // Request an int from the client
 ````
-For example, if a device sends the message with ID CANID_PP_PING, the message will consist of the characters 'Ping'. The next step is to define the interface of zjhe broker class, which reacts to incoming messages. It needs one pure virtual function for each message:
+
+The CAN bus defintion requires that no two devices can send messages with identical CAN IDs (otherwise bus arbitration may fail, which you might be willing to tolerate...). Therefore, in the example, each device is assigned a random device ID at startup. This Device ID is or'ed together with the above CAN IDs before sending messages. To make this easier, a few macros are defined in the profile header file:
+
+...
+#define PP_MAKE_CAN_ID(Device, Message)     ((Device<<8) | Message) 
+#define PP_GET_MESSAGE_ID(CanID)            (CanID & 0xff)
+#define PP_GET_DEVICE_ID(CanID)             (CanID>>8)
+...
+
+For example, if a device sends the message with ID CANID_PP_PING, the message will consist of the characters 'Ping'. The next step is to define the interface of the broker class, which reacts to incoming messages. It needs one pure virtual function for each message:
 
 ````
 class PingPongNotificationsFromCAN
@@ -91,9 +100,9 @@ class CANPingPong : public SimpleCANProfile
             pRxCommands = _pRxCommands;
         }
 
-	void  CANRequestInt()
+		void  CANRequestInt(int DeviceID)
         {
-            Can1->RequestMessage(2, CANID_PP_RTRINT);            
+            Can1->RequestMessage(2, PP_MAKE_CAN_ID(DeviceID, CANID_PP_RTRINT));            
         }
 
         void HandleCanMessage(SimpleCanRxHeader rxHeader, uint8_t *rxData)
@@ -102,7 +111,7 @@ class CANPingPong : public SimpleCANProfile
             
             char Str[MAX_STRLEN];
             float Val=0;
-            switch(rxHeader.Identifier & 0x7)
+            switch(PP_GET_MESSAGE_ID(rxHeader.Identifier))
             {
                 case CANID_PP_PING:
                     CANGetString(rxData, Str, min(MAX_STRLEN-1, (int)rxHeader.DataLength));
@@ -133,10 +142,9 @@ class CANPingPong : public SimpleCANProfile
     private:
         PingPongNotificationsFromCAN* pRxCommands;
 };
-
 ````
 
-Now, the profile definition is complete, safe it as a header file and include it in your main program. The next is then to implement the broker class, which is derived from the PingPongNotificationsFromCAN class which we defined in our profile header file above. This class is pretty straight forward, just implement what you expect your program to do upon reveiving a certain message from the CAN bus. Note that these functions are called whenever you call CANDevice.Can1->Loop() (see further down, we'll come to that soon) in your program and that these functions are already completely decoupled from any interrupt service routines. Our example broker looks like this:
+Now, the profile definition is complete, safe it as a header file and include it in your main program. The next step is then to implement the broker class, which is derived from the PingPongNotificationsFromCAN class which we defined in our profile header file above. This class is pretty straight forward, just implement what you expect your program to do upon reveiving a certain message from the CAN bus. Note that these functions are called whenever you call CANDevice.Can1->Loop() (see further down, we'll come to that soon) in your program and that these functions are already completely decoupled from any interrupt service routines. Our example broker looks like this:
 
 
 ````
@@ -187,7 +195,7 @@ class RxFromCAN : public PingPongNotificationsFromCAN
 ````
 
 
-It is time now to create some objects which allow us to use the CAN bus. What we need is simple an instance of our broker class and an instance of the profile class. It goes like this:
+It is time now to create some objects which allow us to use the CAN bus. What we need is simply an instance of our broker class and an instance of the profile class. It goes like this:
 ````
 // Instantiation of the class which receives messages from the CAN bus.
 // This class depends on your application!
@@ -197,7 +205,7 @@ RxFromCAN CANBroker;
 CANPingPong CANDevice(CreateCanLib(), &CANBroker);
 
 ````
-These two objects can now be used in our setup and loop functions. In setup we initialize SimipleCAN. If we activate the bus termination here as well depends on your bus topology and weather your device supports enabling/disabling bus termination by software (STM32 does, ESP32 does not).
+These two objects can now be used in our setup and loop functions. In setup() we initialize SimipleCAN. If we activate the bus termination here as well depends on your bus topology and wether your device supports enabling/disabling bus termination by software (B-G431B-ESC1 does, ESP32 typically does not).
 ````
 void setup() 
 {
@@ -209,7 +217,7 @@ void setup()
 	CANDevice.Can1->SetBusTermination(true);
 }
 ````
-In the loop function finally we have to update the message queues on a regular basis. All incomming messages will be placed in the input queue automatically by the ISR and in the same way, all messages ready to be sent will be sent automatically, independent from  calling CANDevice.Can1->Loop(), but your broker class won't be caöed if you don't call this function.
+In the loop function finally we have to update the message queues on a regular basis. All incomming messages will be placed in the input queue automatically by the ISR and in the same way, all messages ready to be sent will be sent automatically, independent from  calling CANDevice.Can1->Loop(), but your broker class won't be called if you don't call this function.
 ````
 void loop()
 {
@@ -221,7 +229,7 @@ void loop()
 }
 ````
 
-So far so good, we have everything set up to receive messages now and we have everything in place to send messages, but how do we send? That is easy, we simply call any of the send functions that we declared in our profile class. The example below will send the text "Ping", whenever it received "Pong". In addition, all 5s a "Pong" will be sent without having received anything, since we need to get the game started somehow.
+So far so good, we have everything set up to receive messages now and we have everything in place to send messages, but how do we send? That is easy, we simply call any of the send functions that we declared in our profile class. The example below will send the text "Ping", whenever it received "Pong". In addition, all 5 seconds a "Pong" will be sent without having received anything, since we need to get the game started somehow.
 
 ````
 void loop()
@@ -284,7 +292,7 @@ Line 3493:
 ````
 
 ## Limitations
-For the sake of platfom independence, the SimpleCAN supports the least common denomoinator between ESP32 and STM32 only at the moment. This means for example, no FDCAN and very simple filters only (oh, good point, I haven't covered filters in my description yet, but, maybe I'll wait with them to become more elaborate...). Of course, you cannot expect SimpleCAN to implement something, which the underlying hardware does not support (e.g. bus termination).
+For the sake of platfom independence, the SimpleCAN supports the least common denomoinator between ESP32 and STM32 only at the moment. This means for example, no FDCAN and very simple filters only (oh, good point, I haven't covered filters in my description yet, but, maybe I'll wait for them to become more elaborate...). Of course, you cannot expect SimpleCAN to implement something, which the underlying hardware does not support (e.g. bus termination).
 
 
 ## License
@@ -304,7 +312,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,EXPRESS OR IMPLIE
 
 
 ## Credits
-The STM32 implementation was strongly inspired by the discussions and proposals on the SimplFOC forum, especially by work provided by erwin74, JorgeMaker and Owen_Williams of the SimpleFOC community (see this thread: https://community.simplefoc.com/t/can-bus-support/407/21). The code versions provided by erwin74 and Owen_Williams were the basis for this derived work which attempts to be more modular and portable. 
+The STM32 implementation was strongly inspired by the discussions and proposals on the SimpleFOC forum, especially by work provided by erwin74, JorgeMaker and Owen_Williams of the SimpleFOC community (see this thread: https://community.simplefoc.com/t/can-bus-support/407/21). The code versions provided by erwin74 and Owen_Williams were the basis for this derived work which attempts to be more modular and portable. 
 The ESP32 specific implementation is based on previous work by Thomas Barth, barth-dev.de, especially his definition of the ESP32 CAN controller registeres is used in SimpleCAN.
 
 
