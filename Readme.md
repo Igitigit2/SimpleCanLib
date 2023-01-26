@@ -59,7 +59,7 @@ The definition of a CAN profile is closely tied to the actual application and th
 For our PingPong example the answers are easy, all devices are identical, so we only need one set of profile and broker class and we do not need specific addresses for devices (but they must be unique nevertheless). We simply start by defining a few CAN IDs which we will use as descriptors for the content of messages:
 
 
-```
+````
 #define CANID_PP_PING    1       // Message is "Ping"
 #define CANID_PP_PONG    2       // Message is "Pong"
 #define CANID_PP_FLOAT   3       // Message is a floating point value
@@ -68,11 +68,11 @@ For our PingPong example the answers are easy, all devices are identical, so we 
 
 The CAN bus defintion requires that no two devices can send messages with identical CAN IDs (otherwise bus arbitration may fail, which you might be willing to tolerate...). Therefore, in the example, each device is assigned a random device ID at startup. This Device ID is or'ed together with the above CAN IDs before sending messages. To make this easier, a few macros are defined in the profile header file:
 
-....
+````
 #define PP_MAKE_CAN_ID(Device, Message)     ((Device<<8) | Message) 
 #define PP_GET_MESSAGE_ID(CanID)            (CanID & 0xff)
 #define PP_GET_DEVICE_ID(CanID)             (CanID>>8)
-....
+````
 
 For example, if a device sends the message with ID CANID_PP_PING, the message will consist of the characters 'Ping'. The next step is to define the interface of the broker class, which reacts to incoming messages. It needs one pure virtual function for each message:
 
