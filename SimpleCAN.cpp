@@ -110,6 +110,11 @@ bool SimpleCan::RequestMessage(int NumBytes, int CanID, bool UseEFF)
 }
 
 
+//***********************************************************************
+//***********************************************************************
+//***********************************************************************
+// Profile starts here
+
 // This is the message hadler for the profile!
 static  void HandleCanMessage(SimpleCanRxHeader rxHeader, uint8_t *rxData, void* userData)
 {

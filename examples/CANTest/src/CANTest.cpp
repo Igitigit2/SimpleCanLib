@@ -4,10 +4,6 @@
    
 	(c) 2022 Christian Schmidmer, use is subject to MIT license
 */
-
-#include <Arduino.h>
-
-
 #include <Arduino.h>
 #include <math.h>
 #include "SimpleCAN.h"
@@ -24,7 +20,7 @@
 class RxFromCAN : public PingPongNotificationsFromCAN
 {
     public:
-		RxFromCAN() : ReceivedID(-1), ReceivedFloatVal(1.0f), RTR(false) {};
+		RxFromCAN() : ReceivedID(-1), RTR(false) , ReceivedFloatVal(1.0f){};
 
         void ReceivedPong(const char* pText)
         {

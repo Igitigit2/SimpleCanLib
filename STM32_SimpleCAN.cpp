@@ -103,7 +103,6 @@ SCCanStatus SC2STM32_Filter(FilterDefinition *SCFilter, FDCAN_FilterTypeDef*  ST
 }
 
 
-
 class RxHandlerSTM32 : public RxHandlerBase
 {
 	public:
@@ -121,7 +120,6 @@ class SimpleCan_B_g431B : public SimpleCan
 {
 	public:
 		SimpleCan_B_g431B();
-
 
 		//*******************************************************
 		//*** Implementation of pure virtual methods ************
@@ -223,7 +221,7 @@ bool RxHandlerSTM32::CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, i
 
 
 // Let the hardware know the frame has been read.
- void RxHandlerSTM32::ReleaseRcvBuffer()
+void RxHandlerSTM32::ReleaseRcvBuffer()
 {
 	// Nothing to do for STM32;	
 }
@@ -254,11 +252,13 @@ SimpleCan_B_g431B::SimpleCan_B_g431B()
 	SendIDFilterFunc = 0;
 }
 
+
 SCCanStatus SimpleCan_B_g431B::SetBusTermination(bool On)
 {
 	digitalWrite(A_CAN_TERM, On ? HIGH : LOW);
 	return CAN_OK;
 }
+
 
 SCCanStatus SimpleCan_B_g431B::Start(void)
 {
@@ -266,11 +266,13 @@ SCCanStatus SimpleCan_B_g431B::Start(void)
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_Start(&_hfdcan1));
 }
 
+
 SCCanStatus SimpleCan_B_g431B::Stop(void)
 {
 	digitalWrite(A_CAN_SHDN, HIGH);
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_Stop(&_hfdcan1));
 }
+
 
 SCCanStatus SimpleCan_B_g431B::Init(SCCanSpeed speed, CanIDFilter IDFilterFunc)
 {
@@ -319,7 +321,6 @@ SCCanStatus SimpleCan_B_g431B::ConfigFilter(FilterDefinition *SCFilter)
 }
 
 
-
 // Specify what to do with non-matching frames.
 SCCanStatus SimpleCan_B_g431B::ConfigGlobalFilter(uint32_t nonMatchingStd, uint32_t nonMatchingExt, uint32_t rejectRemoteStd, uint32_t rejectRemoteExt)
 {
@@ -351,17 +352,20 @@ SCCanStatus SimpleCan_B_g431B::ActivateNotification(uint16_t dataLength, RxCallb
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_ActivateNotification(&_hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE | FDCAN_IT_TX_COMPLETE, FDCAN_TX_BUFFER0));
 }
 
+
 SCCanStatus SimpleCan_B_g431B::DeactivateNotification()
 {
 	RxHandlerP = NULL;
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_DeactivateNotification(&_hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE));
 }
 
+
 SCCanStatus SimpleCan_B_g431B::AddMessageToTxFifoQ(FDCAN_TxHeaderTypeDef *pTxHeader, uint8_t *pTxData)
 {
 	// Serial.printf(F("Sending CAN message ID=%d\n"), pTxHeader->Identifier);
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_AddMessageToTxFifoQ(&_hfdcan1, pTxHeader, pTxData));
 }
+
 
 void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan)
 {
@@ -411,6 +415,7 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan)
 	HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
 }
 
+
 void FDCAN1_IT0_IRQHandler(void)
 {
 	HAL_FDCAN_IRQHandler(&SimpleCan_B_g431B::_hfdcan1);
@@ -437,6 +442,7 @@ void HAL_FDCAN_TxBufferCompleteCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t Bu
 	// Serial.println("HAL_FDCAN_TxBufferCompleteCallback");
 	SimpleCan_B_g431B::SendNextMessageFromQueue();
 }
+
 
 bool SimpleCan_B_g431B::SendNextMessageFromQueue()
 {
@@ -488,6 +494,7 @@ bool SimpleCan_B_g431B::SendNextMessageFromQueue()
 
 			if (TxOk)
 			{
+				// Serial.printf("Tx %d", TxQueue.NumElements);
 				TxOk = (HALSTATUS2CANSTATUS(HAL_FDCAN_AddMessageToTxFifoQ(&_hfdcan1, &TxHeader, Msg.Data)) == CAN_OK);
 			}
 			if (!TxOk)
@@ -497,6 +504,7 @@ bool SimpleCan_B_g431B::SendNextMessageFromQueue()
 
 	return true;
 }
+
 
 // Sending an RTR frame is exactly the same as SendMessage(), except for setting the RTR bit in the header
 // and to not send any data bytes as payload. NumBytes/DLC must be set to the number of bytes expected in the
@@ -536,6 +544,7 @@ bool SimpleCan_B_g431B::SendRequestMessage(int NumBytes, int CanID, bool UseEFF)
 
 	if (TxOk)
 	{
+		Serial.print("CAN: x!\n");
 		TxOk = (HALSTATUS2CANSTATUS(HAL_FDCAN_AddMessageToTxFifoQ(&_hfdcan1, &TxHeader, DummyData)) == CAN_OK);
 	}
 

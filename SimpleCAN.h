@@ -25,7 +25,7 @@
 #include "arduino.h"
 
 #define RX_QUEUE_SIZE	16
-#define TX_QUEUE_SIZE	8
+#define TX_QUEUE_SIZE	16
 
 #if !defined _STM32_DEF_ && !defined _ESP32_
 	// Depending on the board you compile this for, define one (!) of the following two.
