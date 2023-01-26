@@ -544,7 +544,7 @@ bool SimpleCan_B_g431B::SendRequestMessage(int NumBytes, int CanID, bool UseEFF)
 
 	if (TxOk)
 	{
-		Serial.print("CAN: x!\n");
+		// Serial.print("CAN: x!\n");
 		TxOk = (HALSTATUS2CANSTATUS(HAL_FDCAN_AddMessageToTxFifoQ(&_hfdcan1, &TxHeader, DummyData)) == CAN_OK);
 	}
 
