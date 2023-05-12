@@ -92,34 +92,42 @@ private:
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 
 template <class T>
 class SafeQueue
 {
     public:
-        SafeQueue(int Size=16) : NumElements(0)
+        SafeQueue(int Size=16) 
         {
             Queue = xQueueCreate( Size, sizeof( T ) );
+            NumElements = 0;
+            QueueSema = xSemaphoreCreateCounting( 1, 0 );        
         }
 
         // Add an element to the queue.
         // ISR, absolutely no printing to serial!!
         void Enqueue(T t)
         {
+            xSemaphoreTakeFromISR(QueueSema, 0);
             xQueueSendFromISR(Queue, &t, 0);
             NumElements++;
+            xSemaphoreGiveFromISR(QueueSema, 0);
         }
 
         // Get the "front"-element.
-        // If the queue is empty, wait till a element is avaiable.
+        // If the queue is empty, wait till an element is avaiable.
         // ISR, absolutely no printing to serial!!
         bool Dequeue(T* pVal)
         {
-            if(xQueueReceive(Queue, pVal, 0))
+            xSemaphoreTakeFromISR(QueueSema, 0);
+            if(xQueueReceiveFromISR(Queue, pVal, 0))
             {
                 NumElements--;
+                xSemaphoreGiveFromISR(QueueSema, 0);
                 return true;
             }
+            xSemaphoreGiveFromISR(QueueSema, 0);
             return false;
         }
 
@@ -127,7 +135,36 @@ class SafeQueue
 
 private:
   QueueHandle_t Queue;
+  SemaphoreHandle_t QueueSema;
 };
 
 #endif
+
+#if 0
+template<class T>
+T volatile_copy(T const volatile& source) {
+    static_assert(std::is_trivially_copyable_v<T>, "Input must be trivially copyable");
+    T dest;
+    auto* dest_ptr = dynamic_cast<char*>(&dest);
+    auto* source_ptr = dynamic_cast<char const volatile*>(&source);
+
+    for(int i = 0; i < sizeof(T); i++) {
+        dest_ptr[i] = source_ptr[i];
+    }
+
+    return dest;
+}
+
+template<class T>
+void volatile_assign(T volatile& dest, T const& source) {
+    static_assert(std::is_trivially_copyable_v<T>, "Input must be trivially copyable");
+    auto* source_ptr = dynamic_cast<char*>(&source);
+    auto* dest_ptr   = dynamic_cast<char volatile*>(&dest);
+
+    for(int i = 0; i < sizeof(T); i++) {
+        dest_ptr[i] = source_ptr[i];
+    }
+}
+#endif
+
 #endif

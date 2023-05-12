@@ -50,6 +50,9 @@ bool SimpleCan::SendMessage(const uint8_t* pData, int NumBytes, int CanID, bool 
 	// Skip command if sender ID is disabled.
 	// if (SendIDFilterFunc && !SendIDFilterFunc(CanID)) return true; 
 
+	// Skip sending if disabled.
+	if (DoNotSend) return true;
+
 	// Serial.printf("CAN: Queueing message with ID 0x%x, %d messages in TX queue.\n", CanID, TxQueue.NumElements);
 
 	CANTxMessage Msg;
@@ -85,6 +88,9 @@ bool SimpleCan::RequestMessage(int NumBytes, int CanID, bool UseEFF)
 	// Skip command if sender ID is disabled.
 	// if (SendIDFilterFunc && !SendIDFilterFunc(CanID)) return true; 
 
+	// Skip sending if disabled.
+	if (DoNotSend) return true;
+
 	// PrintLog("CAN: Queueing RTR message with ID 0x%x, %d messages in TX queue.\n", CanID, TxQueue.NumElements);
 
 	CANTxMessage Msg;
@@ -116,7 +122,7 @@ bool SimpleCan::RequestMessage(int NumBytes, int CanID, bool UseEFF)
 // Profile starts here
 
 // This is the message hadler for the profile!
-static  void HandleCanMessage(SimpleCanRxHeader rxHeader, uint8_t *rxData, void* userData)
+static  void HandleCanMessage(const SimpleCanRxHeader rxHeader, const uint8_t *rxData, void* userData)
 {
     SimpleCANProfile* pClass = (SimpleCANProfile*)userData;
     pClass->HandleCanMessage(rxHeader, rxData);
@@ -150,19 +156,19 @@ void SimpleCANProfile::Init(CanIDFilter IDFilterFunc)
 }
 
 
-void SimpleCANProfile::CANSendText(const char* Text, int CanID)
+void SimpleCANProfile::CANSendText(const char* Text, const int CanID)
 {
 	Can1->SendMessage((uint8_t*)Text,  strlen(Text), CanID);
 }
 
 
-void SimpleCANProfile::CANSendFloat(float Val, int CanID)
+void SimpleCANProfile::CANSendFloat(const float Val, const int CanID)
 {
 	Can1->SendMessage((uint8_t*)&Val,  sizeof(Val), CanID);
 }
 
 
-void SimpleCANProfile::CANSendFloat(float Val1, float Val2, int CanID)
+void SimpleCANProfile::CANSendFloat(const float Val1, const float Val2, const int CanID)
 {
     uint8_t Buffer[2*sizeof(float)];
     memcpy(Buffer, &Val1, sizeof(float));
@@ -171,13 +177,13 @@ void SimpleCANProfile::CANSendFloat(float Val1, float Val2, int CanID)
 }
 
 
-void SimpleCANProfile::CANSendInt(int32_t Val, int CanID)
+void SimpleCANProfile::CANSendInt(const int32_t Val, const int CanID)
 {
 	Can1->SendMessage((uint8_t*)&Val,  sizeof(int), CanID);
 }
 
 
-void SimpleCANProfile::CANSendInt(int32_t Val1, int32_t Val2, int CanID)
+void SimpleCANProfile::CANSendInt(const int32_t Val1, const int32_t Val2, const int CanID)
 {
     uint8_t Buffer[2*sizeof(int32_t)];
     memcpy(Buffer, &Val1, sizeof(int32_t));
@@ -264,6 +270,7 @@ void RxHandlerBase::Notify(/*...*/)
     // Let the hardware know the frame has been read.
 	ReleaseRcvBuffer();
 
+	Msg.Error = RxErrorFlag;
 	if (SimpleCan::RxQueue.NumElements<16)
 		SimpleCan::RxQueue.Enqueue(Msg);
 }
@@ -277,10 +284,11 @@ bool RxHandlerBase::Loop()
 	if (ProfileCallback != NULL)
 	{
 		CanRxMessage Msg;
- 		if (SimpleCan::RxQueue.Dequeue(&Msg))
+ 		if (1 && SimpleCan::RxQueue.Dequeue(&Msg))
 		{
 			// Serial.println("Read message from buffer");
 			// --- Convert the header and call the user provided RX handler.
+			if (Msg.Error) Serial.println("Dequeue msg with error");
 			ProfileCallback(Msg.SCHeader, Msg.Data, ProfileClass);
 		}
 	}

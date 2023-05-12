@@ -41,7 +41,7 @@ class CANPingPong : public SimpleCANProfile
             Can1->RequestMessage(2, PP_MAKE_CAN_ID(DeviceID, CANID_PP_RTRINT));            
         }
 
-        void HandleCanMessage(SimpleCanRxHeader rxHeader, uint8_t *rxData)
+        void HandleCanMessage(const SimpleCanRxHeader rxHeader, const uint8_t *rxData)
         {
             // Serial.println("@");
             #ifdef _STM32_DEF_  

@@ -169,8 +169,10 @@ class CANTxMessage
 class CanRxMessage
 {
 	public:
+		CanRxMessage() : Error(false) {};
 		SimpleCanRxHeader SCHeader;
 		uint8_t Data[8];
+		uint8_t Error;
 };
 
 
@@ -183,7 +185,7 @@ class CanRxMessage
 // Callback function which should be user supplied and which will be called for each
 // incomming message which passes the filters.
 // The void* is exactly the value which was set as userData when calling ActivateNotification().
-typedef void(*RxCallback)(SimpleCanRxHeader rxHeader, uint8_t *rxData, void* userData);
+typedef void(*RxCallback)(const SimpleCanRxHeader rxHeader, const uint8_t *rxData, void* userData);
 
 
 // Platform specific implementations must also provide one class derived from RxHandlerBase
@@ -209,6 +211,7 @@ class RxHandlerBase
 
 		uint8_t *_rxData;
 		uint16_t _rxDataLength;
+		uint8_t RxErrorFlag;
 };
 
 
@@ -219,6 +222,8 @@ typedef bool (*CanIDFilter) (int CanID);
 class SimpleCan 
 {
 	public:
+		SimpleCan() : DoNotSend(false), DoNotReceive(false) {}
+
 		//*************************************************************************************
 		//*** Pure virtual methods, which require hardware specific implementation ************
 		
@@ -286,9 +291,20 @@ class SimpleCan
 		#define MAX_STATUS_STR_LEN 64
 		virtual SCCanStatus GetStatus(uint32_t* Status, char* Str) {return CAN_UNSUPPORTED;};
 
+		//Disable/enable sending of messages. Helpful for debugging and to avoid buffer overruns.
+		void DisableTx() {DoNotSend=true;};
+		void EnableTx () {DoNotSend=false;};
+
+		//Disable/enable receiving of messages. Helpful for debugging and to avoid buffer overruns.
+		void DisableRx() {DoNotReceive=true;};
+		void EnableRx () {DoNotReceive=false;};
 
 		static SafeQueue<CanRxMessage> RxQueue;
 		static SafeQueue<CANTxMessage> TxQueue;
+
+	private:
+		bool DoNotSend;
+		bool DoNotReceive;
 };
 
 
@@ -309,15 +325,15 @@ class SimpleCANProfile
 {
     public:
 		// This is, where you finaly receive the CAN messages in your own code!
-        virtual void HandleCanMessage(SimpleCanRxHeader rxHeader, uint8_t *rxData)=0;
+        virtual void HandleCanMessage(const SimpleCanRxHeader rxHeader, const uint8_t *rxData)=0;
 
         SimpleCANProfile(SimpleCan* pCan);
         virtual void  Init(CanIDFilter IDFilterFunc=0);
-        virtual void  CANSendText(const char* Text, int CanID);
-        virtual void  CANSendFloat(float Val1, int CanID);
-        virtual void  CANSendFloat(float Val1, float Val2, int CanID);
-        virtual void  CANSendInt(int32_t Val, int CanID);
-		virtual void  CANSendInt(int32_t Val1, int32_t Val2, int CanID);
+        virtual void  CANSendText(const char* Text, const int CanID);
+        virtual void  CANSendFloat(const float Val1, const int CanID);
+        virtual void  CANSendFloat(const float Val1, const float Val2, const int CanID);
+        virtual void  CANSendInt(const int32_t Val, const int CanID);
+		virtual void  CANSendInt(const int32_t Val1, const int32_t Val2, const int CanID);
         virtual float CANGetFloat(const uint8_t* pData);
         virtual int   CANGetInt(const uint8_t* pData);
 		virtual void  CANGetInt(const uint8_t* pData, int32_t* pInt1, int32_t* pInt2);

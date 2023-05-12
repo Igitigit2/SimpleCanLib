@@ -47,8 +47,8 @@ class RxHandlerESP32 : public RxHandlerBase
 	public:
 		// Note: The constructor here is a must in order to initialize the base class. 
 		RxHandlerESP32(uint16_t dataLength) : RxHandlerBase(dataLength) {};
-		 bool CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, int MaxDataLen);
-		 void ReleaseRcvBuffer();
+		bool CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, int MaxDataLen);
+		void ReleaseRcvBuffer();
 };
 
 
@@ -227,6 +227,27 @@ static  void CAN_isr(void *arg_p)
     // Read interrupt status and clear flags
 	// Reading this clears the flags???
     uint32_t interrupt = MODULE_CAN->IR.U;
+	uint8_t ECCReg = MODULE_CAN->ECC.B.ECC;
+	Can1RxHandler.RxErrorFlag=ECCReg;
+	bool InvalidTx=false;
+
+    // Handle error interrupts.
+    if (interrupt & (__CAN_IRQ_ERR						//0x4
+                      | __CAN_IRQ_DATA_OVERRUN			//0x8
+                      | __CAN_IRQ_WAKEUP				//0x10
+                      | __CAN_IRQ_ERR_PASSIVE			//0x20 v
+                      | __CAN_IRQ_ARB_LOST				//0x40 v
+                      | __CAN_IRQ_BUS_ERR)				//0x80 v
+	)
+	{
+		// PrintLnLog("e");
+    	/*Error handler*/
+		SimpleCan_ESP32_DevC::CANBusErrors++;
+		if ((ECCReg & 0xE) == 0xC)
+			Can1RxHandler.RxErrorFlag = true; // Skip TX frame? 
+		if ((ECCReg & 0xE) == 0xE)
+			Can1RxHandler.RxErrorFlag = true; // Skip RX frame? 
+    }
 
     // Handle TX complete interrupt
     if (interrupt & __CAN_IRQ_TX) 
@@ -257,20 +278,6 @@ static  void CAN_isr(void *arg_p)
 		PrintLnLog("CAN ERROR: __CAN_IRQ_WAKEUP");
 #endif
 
-    // Handle error interrupts.
-    if (interrupt & (__CAN_IRQ_ERR						//0x4
-                      | __CAN_IRQ_DATA_OVERRUN			//0x8
-                      | __CAN_IRQ_WAKEUP				//0x10
-                      | __CAN_IRQ_ERR_PASSIVE			//0x20 v
-                      | __CAN_IRQ_ARB_LOST				//0x40 v
-                      | __CAN_IRQ_BUS_ERR)				//0x80 v
-	)
-	{
-		// PrintLnLog("e");
-    	/*Error handler*/
-		SimpleCan_ESP32_DevC::CANBusErrors++;
-    }
-
 	
     // Handle RX frame available interrupt
 	// Check this last, because it reads the interrupt status register repeatedly, which will clear all other IRQs.
@@ -280,7 +287,6 @@ static  void CAN_isr(void *arg_p)
 		EmptyRxFifo();
 		return;
 	}
-
 }
 
 
@@ -668,9 +674,6 @@ int SimpleCan_ESP32_DevC::GetOtherErrors()
 	return CANBusErrors;
 }
 
-
-#define PrintStatusBit(Value, Text)  
-
 SCCanStatus SimpleCan_ESP32_DevC::GetStatus(uint32_t* Status, char* Str) 
 {
 	if (Status)
@@ -688,6 +691,10 @@ SCCanStatus SimpleCan_ESP32_DevC::GetStatus(uint32_t* Status, char* Str)
 		strcat(Str, MODULE_CAN->SR.B.TBS?" TBS":" ---");
 		strcat(Str, MODULE_CAN->SR.B.DOS?" DOS":" ---");
 		strcat(Str, MODULE_CAN->SR.B.RBS?" RBS":" ---");
+		
+		char Str2[16];
+		sprintf(Str2, " ECC=0x%u", MODULE_CAN->ECC.B.ECC);
+		strcat(Str, Str2);
 	}
 	
 	return CAN_OK;
