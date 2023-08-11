@@ -254,11 +254,11 @@ void loop()
 }
 ````
 
-That's it! It looks far more complicated that it actually is. If you follow this tutorial step by step, it is really easy since all the required functions are very basic. You don't need to deal with anything CAN specific anymore, just focus on your own application. Most of the code presented here is directly taken from the PinPong example in the examples folder of the library, but a bit simplified. The example handles more messages than just "Ping" and "Pong" and it also demonstrates how to use RTR frames. 
+That's it! It looks far more complicated than it actually is. If you follow this tutorial step by step, it is really easy since all the required functions are very basic. You don't need to deal with anything CAN specific anymore, just focus on your own application. Most of the code presented here is directly taken from the PinPong example in the examples folder of the library, but a bit simplified. The example handles more messages than just "Ping" and "Pong" and it also demonstrates how to use RTR frames. 
 
 
-### Float values in messages sent across different platforms
-The binary representation of floating point numbers is machine and compiler specific. Most compilers today use IEEE number formats, so the main issue when exchanging float numbers between different CPUs will be the byte order. Luckily, STM32 and ESP32 use exactly te same single precision float format, so the can be simply send as four bytes. For other CPUs, this is not necessarily the case and numbers may need to be packed differently.
+### Float values in messages sent across CAN bus between different platforms
+The binary representation of floating point numbers is machine and compiler specific. Most compilers today use IEEE number formats, so the main issue when exchanging float numbers between different CPUs in binary form will be the byte order. Luckily, STM32 and ESP32 use exactly the same single precision float format, so they can simply be sent as four bytes. For other CPUs, this is not necessarily the case and numbers may need to be packed differently.
 
 ### STM32 specific
 For RTR frames to work you need to apply the following patch to the Arduino STM32 framework:
@@ -292,7 +292,7 @@ Line 3493:
 ````
 
 ## Limitations
-For the sake of platfom independence, the SimpleCAN supports the least common denomoinator between ESP32 and STM32 only at the moment. This means for example, no FDCAN and very simple filters only (oh, good point, I haven't covered filters in my description yet, but, maybe I'll wait for them to become more elaborate...). Of course, you cannot expect SimpleCAN to implement something, which the underlying hardware does not support (e.g. bus termination).
+For the sake of platfom independence, the SimpleCAN library supports the least common denominator between ESP32 and STM32 only at the moment. This means for example, no FDCAN and very simple filters only (oh, good point, I haven't covered filters in my description yet, but, maybe I'll wait for them to become more elaborate...). Of course, you cannot expect SimpleCAN to implement something, which the underlying hardware does not support (e.g. bus termination).
 
 
 ## License
