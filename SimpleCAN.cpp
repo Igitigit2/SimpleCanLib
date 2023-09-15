@@ -6,7 +6,7 @@
     (c) 2022 Christian Schmidmer, use is subject to MIT license
 */
 
-#include <arduino.h>
+#include <Arduino.h>
 #include "SimpleCAN.h"
 
 

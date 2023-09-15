@@ -13,7 +13,7 @@
 	(c) 2022 Christian Schmidmer, use is subject to MIT license
 */
 
-#include <arduino.h>
+#include <Arduino.h>
 #ifdef USE_LOGLIB
 	#include "Logging.h"
 #else
@@ -37,7 +37,7 @@
 #include "driver/gpio.h"
 
 #include "ESP32_CAN_regdef.h"
-#include "SimpleCan.h"
+#include "SimpleCAN.h"
 
 
 static  void CAN_isr(void *arg_p);

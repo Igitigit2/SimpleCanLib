@@ -22,7 +22,7 @@
 */
 
 #pragma once
-#include "arduino.h"
+#include "Arduino.h"
 
 #define RX_QUEUE_SIZE	16
 #define TX_QUEUE_SIZE	16
