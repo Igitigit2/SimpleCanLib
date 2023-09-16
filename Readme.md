@@ -25,9 +25,9 @@ CAN bus as such is completely ignorant of any application layer. It only defines
 
 
 ## How it works
-At the basis is the class SimpleCan (SimpleCan.h), which defines an interface for all platform specific implementations. Through this interface all low level communication is handled. If you ever derive your own platform specific class from this interface, make sure that all routines are thread safe and do not expose any Interupt service routines (which aren't thread safe...). For the ESP32 and STM32 implementations, thread safe queues are used to accomplish this.
+At the basis is the class SimpleCan (SimpleCAN.h), which defines an interface for all platform specific implementations. Through this interface all low level communication is handled. If you ever derive your own platform specific class from this interface, make sure that all routines are thread safe and do not expose any Interupt service routines (which aren't thread safe...). For the ESP32 and STM32 implementations, thread safe queues are used to accomplish this.
 
-On top of the low level routines sits the CAN profile. The base class for application specific profiles is always SimpleCANProfile (SimpleCan.h). The low level SimpleCan derived object is a member of this class. SimpleCANProfile provides functions for sending basic data types over the CAN bus and it contains an abstract handler SimpleCANProfile::HandleCanMessage() for incomming messages, which must be implemented by your own profile class.
+On top of the low level routines sits the CAN profile. The base class for application specific profiles is always SimpleCANProfile (SimpleCAN.h). The low level SimpleCan derived object is a member of this class. SimpleCANProfile provides functions for sending basic data types over the CAN bus and it contains an abstract handler SimpleCANProfile::HandleCanMessage() for incomming messages, which must be implemented by your own profile class.
 
 The example profile CANPingPong is derived from SimpleCANProfile and shows how to do this. As you can see, depending on the CAN ID, the implementation for HandleCanMessage() simply dispatches messages to other functions which are defined by an abstract class PingPongNotificationsFromCAN. A pointer to a class derived from PingPongNotificationsFromCAN is passed to the constructor of CANPingPong.
 

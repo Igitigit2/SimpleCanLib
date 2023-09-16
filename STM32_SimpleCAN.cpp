@@ -44,9 +44,9 @@
 */
 
 
-#include <arduino.h>
+#include <Arduino.h>
 #include "ThreadSafeQueue.h"
-#include "SimpleCan.h"
+#include "SimpleCAN.h"
 
 // #define _STM32_DEF_
 
