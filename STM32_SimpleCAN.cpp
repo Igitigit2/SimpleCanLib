@@ -48,16 +48,16 @@
 #include "ThreadSafeQueue.h"
 #include "SimpleCAN.h"
 
-// #define _STM32_DEF_
+// #define STM32G4xx
 
-#if defined(_STM32_DEF_)
+#if defined(STM32G4xx)
 
 #ifdef Error_Handler
 #undef Error_Handler
 
 void Error_Handler(int Code=-1)
 {
-	Serial.printf("\nError SimpleCan_B_g431B %d\n", Code);
+	Serial.printf("\nError SimpleCan_STM32G4xx %d\n", Code);
 }
 #endif
 
@@ -106,7 +106,7 @@ SCCanStatus SC2STM32_Filter(FilterDefinition *SCFilter, FDCAN_FilterTypeDef*  ST
 class RxHandlerSTM32 : public RxHandlerBase
 {
 	public:
-		// Note: The constructor here is a must on order to initialize the base class. 
+		// Note: The constructor here is a must in order to initialize the base class. 
 		RxHandlerSTM32(uint16_t dataLength) : RxHandlerBase(dataLength) {};
 		bool CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, int MaxDataLen);		
  		void ReleaseRcvBuffer();		
@@ -116,10 +116,10 @@ class RxHandlerSTM32 : public RxHandlerBase
 };
 
 
-class SimpleCan_B_g431B : public SimpleCan
+class SimpleCan_STM32G4xx : public SimpleCan
 {
 	public:
-		SimpleCan_B_g431B();
+		SimpleCan_STM32G4xx(uint32_t PinTx, uint32_t PinRx);
 
 		//*******************************************************
 		//*** Implementation of pure virtual methods ************
@@ -177,15 +177,15 @@ class SimpleCan_B_g431B : public SimpleCan
 };
 
 
-CanIDFilter SimpleCan_B_g431B::SendIDFilterFunc;
+CanIDFilter SimpleCan_STM32G4xx::SendIDFilterFunc;
 
-static RxHandlerSTM32 Can1RxHandler(8);			// Preferably this should be allocated by the HAL, just paramtereized here!
-RxHandlerSTM32* SimpleCan_B_g431B::RxHandlerP=nullptr;	// Presumably this must be static because of IRQs????
+static RxHandlerSTM32 Can1RxHandler(8);					// Preferably this should be allocated by the HAL, just paramterized here!
+RxHandlerSTM32* SimpleCan_STM32G4xx::RxHandlerP=nullptr;	// Presumably this must be static because of IRQs????
 
 
-SimpleCan* CreateCanLib()
+SimpleCan* CreateCanLib(uint32_t PinTx, uint32_t PinRx)
 {
-	return (SimpleCan*) new SimpleCan_B_g431B;
+	return (SimpleCan*) new SimpleCan_STM32G4xx(PinTx, PinRx);
 }
 
 
@@ -195,7 +195,8 @@ static const uint8_t DLCtoBytes[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 
 // Copy max _rxDataLength bytes from received frame to _rxData. 
 bool RxHandlerSTM32::CANReadFrame(SimpleCanRxHeader* SCHeader, uint8_t* pData, int MaxDataLen)
 {
-	if (HAL_FDCAN_GetRxMessage(&SimpleCan_B_g431B::_hfdcan1, FDCAN_RX_FIFO0, &_rxHeader, pData) != HAL_OK)		//!!! Data length not checked!!!
+
+	if (HAL_FDCAN_GetRxMessage(&SimpleCan_STM32G4xx::_hfdcan1, FDCAN_RX_FIFO0, &_rxHeader, pData) != HAL_OK)		//!!! Data length not checked!!!
 	{
 		Error_Handler(1);
 		return false;
@@ -232,51 +233,68 @@ extern "C" void FDCAN1_IT0_IRQHandler();
 extern "C" void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs);
 extern "C" void HAL_FDCAN_TxBufferCompleteCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t BufferIndexes);
 
-FDCAN_HandleTypeDef SimpleCan_B_g431B::_hfdcan1 = { };
+FDCAN_HandleTypeDef SimpleCan_STM32G4xx::_hfdcan1 = { };
 
-SimpleCan_B_g431B::SimpleCan_B_g431B()
+// Pin numbers used for the FDCAN1 device are global, since they are required by a callback
+// function from the HAL which has no access to the classes :-(.
+uint32_t PinCANRx=-1;
+uint32_t PinCANTx=-1;
+
+SimpleCan_STM32G4xx::SimpleCan_STM32G4xx(uint32_t PinTx, uint32_t PinRx) : SimpleCan(PinTx, PinRx)
 {
 	if (_hfdcan1.Instance != NULL)
-	{
 		Error_Handler(2);
-	}
 
 	_hfdcan1.Instance = FDCAN1;
 
+	PinCANRx = PinRx;
+	PinCANTx = PinTx;
+
+#ifdef ARDUINO_B_G431B_ESC1
 	pinMode(A_CAN_SHDN, OUTPUT);
 	pinMode(A_CAN_TERM, OUTPUT);
 
 	// Bus termination is on by default.
 	digitalWrite(A_CAN_TERM, HIGH);
-	
+#endif	
 	SendIDFilterFunc = 0;
 }
 
-
-SCCanStatus SimpleCan_B_g431B::SetBusTermination(bool On)
+#ifdef ARDUINO_B_G431B_ESC1
+SCCanStatus SimpleCan_STM32G4xx::SetBusTermination(bool On)
 {
 	digitalWrite(A_CAN_TERM, On ? HIGH : LOW);
 	return CAN_OK;
 }
-
-
-SCCanStatus SimpleCan_B_g431B::Start(void)
+#else		// ARDUINO_PT_SENSOR
+SCCanStatus SimpleCan_STM32G4xx::SetBusTermination(bool On)
 {
+	return CAN_UNSUPPORTED;
+}
+#endif
+
+
+SCCanStatus SimpleCan_STM32G4xx::Start(void)
+{
+#ifdef ARDUINO_B_G431B_ESC1
 	digitalWrite(A_CAN_SHDN, LOW);
+#endif
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_Start(&_hfdcan1));
 }
 
 
-SCCanStatus SimpleCan_B_g431B::Stop(void)
+SCCanStatus SimpleCan_STM32G4xx::Stop(void)
 {
+#ifdef ARDUINO_B_G431B_ESC1
 	digitalWrite(A_CAN_SHDN, HIGH);
+#endif
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_Stop(&_hfdcan1));
 }
 
 
-SCCanStatus SimpleCan_B_g431B::Init(SCCanSpeed speed, CanIDFilter IDFilterFunc)
+SCCanStatus SimpleCan_STM32G4xx::Init(SCCanSpeed speed, CanIDFilter IDFilterFunc)
 {
-	Serial.println("SimpleCan_B_g431B::Init()"); delay(200);
+	Serial.println("SimpleCan_STM32G4xx::Init()"); delay(200);
 
 	if (IDFilterFunc) SendIDFilterFunc = IDFilterFunc;
 
@@ -310,7 +328,7 @@ SCCanStatus SimpleCan_B_g431B::Init(SCCanSpeed speed, CanIDFilter IDFilterFunc)
 }
 
 
-SCCanStatus SimpleCan_B_g431B::ConfigFilter(FilterDefinition *SCFilter)
+SCCanStatus SimpleCan_STM32G4xx::ConfigFilter(FilterDefinition *SCFilter)
 {
 	// Convert the filter definition
 	FDCAN_FilterTypeDef  STMFilter;
@@ -322,20 +340,20 @@ SCCanStatus SimpleCan_B_g431B::ConfigFilter(FilterDefinition *SCFilter)
 
 
 // Specify what to do with non-matching frames.
-SCCanStatus SimpleCan_B_g431B::ConfigGlobalFilter(uint32_t nonMatchingStd, uint32_t nonMatchingExt, uint32_t rejectRemoteStd, uint32_t rejectRemoteExt)
+SCCanStatus SimpleCan_STM32G4xx::ConfigGlobalFilter(uint32_t nonMatchingStd, uint32_t nonMatchingExt, uint32_t rejectRemoteStd, uint32_t rejectRemoteExt)
 {
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_ConfigGlobalFilter(&_hfdcan1, nonMatchingStd, nonMatchingExt, rejectRemoteStd, rejectRemoteExt));
 }
 
 
 // Modify the global filter to reject everything which is not matching the other filters and acceopt all remote frames. 
-SCCanStatus SimpleCan_B_g431B::ConfigGlobalFilter()
+SCCanStatus SimpleCan_STM32G4xx::ConfigGlobalFilter()
 {
 	return ConfigGlobalFilter(FDCAN_REJECT, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_FILTER_REMOTE);
 }
 
 
-SCCanStatus SimpleCan_B_g431B::ActivateNotification(uint16_t dataLength, RxCallback callback, void* userData)
+SCCanStatus SimpleCan_STM32G4xx::ActivateNotification(uint16_t dataLength, RxCallback callback, void* userData)
 {
 	if (RxHandlerP != NULL)
 	{
@@ -353,20 +371,29 @@ SCCanStatus SimpleCan_B_g431B::ActivateNotification(uint16_t dataLength, RxCallb
 }
 
 
-SCCanStatus SimpleCan_B_g431B::DeactivateNotification()
+SCCanStatus SimpleCan_STM32G4xx::DeactivateNotification()
 {
 	RxHandlerP = NULL;
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_DeactivateNotification(&_hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE));
 }
 
 
-SCCanStatus SimpleCan_B_g431B::AddMessageToTxFifoQ(FDCAN_TxHeaderTypeDef *pTxHeader, uint8_t *pTxData)
+SCCanStatus SimpleCan_STM32G4xx::AddMessageToTxFifoQ(FDCAN_TxHeaderTypeDef *pTxHeader, uint8_t *pTxData)
 {
 	// Serial.printf(F("Sending CAN message ID=%d\n"), pTxHeader->Identifier);
 	return HALSTATUS2CANSTATUS(HAL_FDCAN_AddMessageToTxFifoQ(&_hfdcan1, pTxHeader, pTxData));
 }
 
+void ArduinoPinToHAL(uint32_t APin, uint32_t* HALPin, GPIO_TypeDef** HALPort)
+{
+	uint32_t Pin = digitalPinToPinName(APin);
+	*HALPort = get_GPIO_Port(STM_PORT(Pin));
+	*HALPin  = STM_LL_GPIO_PIN(Pin);
+}
 
+
+// Note: This is a weakly bound callback from the HAL. 
+// The only connection to SimplCanLib is through global variables (if required).
 void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan)
 {
 	if (hfdcan == NULL || hfdcan->Instance != FDCAN1)
@@ -394,21 +421,27 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan)
 	
 	// FDCAN1 GPIO Configuration
 	// PA11 ------> FDCAN1_RX
+	uint32_t Pin;
+	GPIO_TypeDef*    Port;
 	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
-	GPIO_InitStruct.Pin = GPIO_PIN_11;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-	GPIO_InitStruct.Alternate = GPIO_AF9_FDCAN1;
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-	// PB9 ------> FDCAN1_TX 
-	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	ArduinoPinToHAL(PinCANRx, &Pin, &Port);
+	GPIO_InitStruct.Pin = Pin;
 	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 	GPIO_InitStruct.Alternate = GPIO_AF9_FDCAN1;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	HAL_GPIO_Init(Port, &GPIO_InitStruct);
+
+	// PB9/PA12 ------> FDCAN1_TX 
+	ArduinoPinToHAL(PinCANTx, &Pin, &Port);
+	GPIO_InitStruct.Pin = Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+	GPIO_InitStruct.Alternate = GPIO_AF9_FDCAN1;
+	HAL_GPIO_Init(Port, &GPIO_InitStruct);
+
 
 	// FDCAN1 interrupt Init
 	HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 0, 0);
@@ -418,7 +451,9 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan)
 
 void FDCAN1_IT0_IRQHandler(void)
 {
-	HAL_FDCAN_IRQHandler(&SimpleCan_B_g431B::_hfdcan1);
+	HAL_FDCAN_IRQHandler(&SimpleCan_STM32G4xx::_hfdcan1);
+	if (SimpleCan_STM32G4xx::RxHandlerP)
+		SimpleCan_STM32G4xx::RxHandlerP->CANBusACtivityDetected();
 }
 
 
@@ -427,11 +462,11 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 	// Serial.println("cb");
 	if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET)
 	{
-		if (SimpleCan_B_g431B::RxHandlerP == NULL)
+		if (SimpleCan_STM32G4xx::RxHandlerP == NULL)
 		{
 			return;
 		}
-		SimpleCan_B_g431B::RxHandlerP->Notify(/*hfdcan*/);			// handle!!
+		SimpleCan_STM32G4xx::RxHandlerP->Notify(/*hfdcan*/);			// handle!!
 	}
 }
 
@@ -440,11 +475,11 @@ void HAL_FDCAN_TxBufferCompleteCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t Bu
 {
 	// If there are still data in the TxQueue, shuffle them to the HAL Tx queue
 	// Serial.println("HAL_FDCAN_TxBufferCompleteCallback");
-	SimpleCan_B_g431B::SendNextMessageFromQueue();
+	SimpleCan_STM32G4xx::SendNextMessageFromQueue();
 }
 
 
-bool SimpleCan_B_g431B::SendNextMessageFromQueue()
+bool SimpleCan_STM32G4xx::SendNextMessageFromQueue()
 {
 	// Serial.println("CAN: SendNextMessageFromQueue)");
 	if(TxQueue.NumElements && !(_hfdcan1.Instance->TXFQS & FDCAN_TXFQS_TFQF))
@@ -512,7 +547,7 @@ bool SimpleCan_B_g431B::SendNextMessageFromQueue()
 // So, in principle, no data array is required, but unfortunately the STM32 HAL routines expect it...
 uint8_t DummyData[8];
 
-bool SimpleCan_B_g431B::SendRequestMessage(int NumBytes, int CanID, bool UseEFF)
+bool SimpleCan_STM32G4xx::SendRequestMessage(int NumBytes, int CanID, bool UseEFF)
 {
 	// Skip command if sender ID is disabled.
 	if (SendIDFilterFunc && !SendIDFilterFunc(CanID)) return true; 
@@ -555,7 +590,7 @@ bool SimpleCan_B_g431B::SendRequestMessage(int NumBytes, int CanID, bool UseEFF)
 }
 
 
-bool SimpleCan_B_g431B::Loop()
+bool SimpleCan_STM32G4xx::Loop()
 {
 	return RxHandlerP->Loop();
 }

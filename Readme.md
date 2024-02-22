@@ -195,16 +195,23 @@ class RxFromCAN : public PingPongNotificationsFromCAN
 ````
 
 
-It is time now to create some objects which allow us to use the CAN bus. What we need is simply an instance of our broker class and an instance of the profile class. It goes like this:
+It is time now to create some objects which allow us to use the CAN bus. What we need is simply an instance of our broker class and an instance of the profile class. Note that you have to adjust the Tx/Rx pin names according to your needs! It goes like this:
 ````
+// A *unique* ID for each device on the CAN bus.
+int MyDeviceID=3;
+
 // Instantiation of the class which receives messages from the CAN bus.
 // This class depends on your application!
 RxFromCAN CANBroker;
 
 // The actual CAN bus class, which handles all communication.
-CANPingPong CANDevice(CreateCanLib(), &CANBroker);
+// Insert the correct pin names here!
+CANPingPong CANDevice(CreateCanLib(A_CAN_TX, A_CAN_RX), &CANBroker);
 
 ````
+In the above code make sure that your ID is really unique for all devices on the CAN bus. Also note that the total length of CAN IDs must not exceed 11 bits!
+The example code uses a simple macro to combine the device specific ID with the message IDs from the profile. 
+
 These two objects can now be used in our setup and loop functions. In setup() we initialize SimipleCAN. If we activate the bus termination here as well depends on your bus topology and wether your device supports enabling/disabling bus termination by software (B-G431B-ESC1 does, ESP32 typically does not).
 ````
 void setup() 
@@ -238,12 +245,12 @@ void loop()
 
 	if (CANBroker.ReceivedID==CANID_PP_PING  || (LastAction+5000<millis()) )
 	{
-		CANDevice.CANSendText("Pong", CANID_PP_PONG);
+		CANDevice.CANSendText("Pong", PP_MAKE_CAN_ID(MyDeviceID, CANID_PP_PONG));
 		LastAction=millis();
 	}
 	else if (CANBroker.ReceivedID==CANID_PP_PONG)
 	{
-		CANDevice.CANSendText("Ping", CANID_PP_PING);
+		CANDevice.CANSendText("Ping", PP_MAKE_CAN_ID(MyDeviceID, CANID_PP_PING));
 		LastAction=millis();
 	}
 

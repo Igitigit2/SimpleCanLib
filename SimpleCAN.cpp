@@ -12,6 +12,8 @@
 
 SafeQueue<CanRxMessage> SimpleCan::RxQueue(RX_QUEUE_SIZE);
 SafeQueue<CANTxMessage> SimpleCan::TxQueue(TX_QUEUE_SIZE);
+bool SimpleCan::BlinkOnActivity=false;
+
 
 // Set a filter to accept all incoming messages
 SCCanStatus SimpleCan::AcceptAllMessages()
@@ -115,6 +117,18 @@ bool SimpleCan::RequestMessage(int NumBytes, int CanID, bool UseEFF)
 	return true;
 }
 
+void SimpleCan::DisableBlinkOnActivity() 
+{
+	BlinkOnActivity=false;
+};
+
+void SimpleCan::EnableBlinkOnActivity() 
+{
+	BlinkOnActivity=true;
+	#ifdef LED_BUILTIN
+		pinMode(LED_BUILTIN, OUTPUT);
+	#endif	
+};
 
 //***********************************************************************
 //***********************************************************************
@@ -231,7 +245,7 @@ void SimpleCANProfile::CANGetFloat(const uint8_t* pData, float* pVal1, float* pV
 
 
 //--------------------------------------------------------------------------------------
-// Implementation of the basic recieve handler, which is common for all platforms
+// Implementation of the basic recerive handler, which is common for all platforms
 
 RxHandlerBase::RxHandlerBase(uint16_t dataLength)
 {
@@ -275,6 +289,13 @@ void RxHandlerBase::Notify(/*...*/)
 		SimpleCan::RxQueue.Enqueue(Msg);
 }
 
+void RxHandlerBase::CANBusACtivityDetected()
+{
+	#ifdef LED_BUILTIN
+	if (SimpleCan::BlinkOnActivity)
+		digitalToggle(LED_BUILTIN);
+	#endif
+}
 
 bool RxHandlerBase::Loop()
 {

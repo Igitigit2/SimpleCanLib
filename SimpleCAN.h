@@ -27,16 +27,12 @@
 #define RX_QUEUE_SIZE	16
 #define TX_QUEUE_SIZE	16
 
-#if !defined _STM32_DEF_ && !defined _ESP32_
-	// Depending on the board you compile this for, define one (!) of the following two.
-	// For platformio this should be one of the -D options in the platformio.ini file. This section
-	// is for Arduino only and not required on pülatformio.
-
-	// #define _STM32_DEF_
-	// #define _ESP32_
+#if !defined STM32G4xx && !defined ESP32
+	// Depending on the board you compile this for, one of the above defines must be defined.
+	// Typically, these are predefined by the Arduino/platformio environment.
 #endif
 
-#if defined(_ESP32_)
+#if defined(ESP32)
 	#include "freertos/FreeRTOS.h"
 	#include "freertos/queue.h"
 #endif
@@ -206,6 +202,11 @@ class RxHandlerBase
 		// Called whenever a frame was read and CANReadFrame() finished or the frame can be discarded otherwise.
 		// Used to signal the hardware that the frame data are not required anymore.
 		virtual void ReleaseRcvBuffer()=0;
+
+		// Called whenever there is activity detected on the CAN bus (frames received / transmitted).
+		// The default implementation just blinks a LED if enabled, but may be overloaded by a board specific version.
+		// Note: This may be before filtering! 
+		virtual void CANBusACtivityDetected();
 		
 		bool Loop();
 
@@ -222,7 +223,7 @@ typedef bool (*CanIDFilter) (int CanID);
 class SimpleCan 
 {
 	public:
-		SimpleCan() : DoNotSend(false), DoNotReceive(false) {}
+		SimpleCan(uint32_t PinTx, uint32_t PinRx) : DoNotSend(false), DoNotReceive(false) {};
 
 		//*************************************************************************************
 		//*** Pure virtual methods, which require hardware specific implementation ************
@@ -299,8 +300,13 @@ class SimpleCan
 		void DisableRx() {DoNotReceive=true;};
 		void EnableRx () {DoNotReceive=false;};
 
+		// Enable/Disable blinking on CAN bus activity.
+		void DisableBlinkOnActivity();
+		void EnableBlinkOnActivity ();
+
 		static SafeQueue<CanRxMessage> RxQueue;
 		static SafeQueue<CANTxMessage> TxQueue;
+		static bool BlinkOnActivity;
 
 	private:
 		bool DoNotSend;
@@ -310,7 +316,7 @@ class SimpleCan
 
 // Class factory which creates a SimpleCan object for the correct platform.
 // There must be exactly one such function available.
-SimpleCan* CreateCanLib();
+SimpleCan* CreateCanLib(uint32_t PinTx, uint32_t PinRx);
 
 
 //*******************************************************************************************************

@@ -21,9 +21,9 @@
 	#define PrintLog    Serial.printf
 #endif
 
-// #define _ESP32_
+// #define ESP32
 
-#if defined(_ESP32_)
+#if defined(ESP32)
 
 
 #include "freertos/FreeRTOS.h"
@@ -124,7 +124,7 @@ class SimpleCan_ESP32_DevC : public SimpleCan
 {
 	public:
 
-		SimpleCan_ESP32_DevC(gpio_num_t _TxPin=GPIO_NUM_5, gpio_num_t _RxPin=GPIO_NUM_35);
+		SimpleCan_ESP32_DevC(uint32_t _TxPin, uint32_t _RxPin);
 
 		//*******************************************************
 		//*** Implementation of pure virtual methods ************
@@ -285,21 +285,23 @@ static  void CAN_isr(void *arg_p)
     {
 		// Serial.print("r");
 		EmptyRxFifo();
-		return;
 	}
+
+	if (SimpleCan_ESP32_DevC::RxHandlerP)
+		SimpleCan_ESP32_DevC::RxHandlerP->CANBusACtivityDetected();
 }
 
 
-
-SimpleCan* CreateCanLib()
+SimpleCan* CreateCanLib(uint32_t TxPin, uint32_t RxPin)
 {
-	return (SimpleCan*) new SimpleCan_ESP32_DevC;
+	return (SimpleCan*) new SimpleCan_ESP32_DevC(TxPin, RxPin);
 }
 
-SimpleCan_ESP32_DevC::SimpleCan_ESP32_DevC(gpio_num_t _TxPin, gpio_num_t _RxPin)
+
+SimpleCan_ESP32_DevC::SimpleCan_ESP32_DevC(uint32_t _TxPin, uint32_t _RxPin) : SimpleCan(_TxPin, _RxPin)
 {
-    RxPin = _RxPin;
-    TxPin = _TxPin;
+    RxPin = (gpio_num_t)_RxPin;
+    TxPin = (gpio_num_t)_TxPin;
 	
 	SendIDFilterFunc = 0;
 	CANBusErrors = 0;
