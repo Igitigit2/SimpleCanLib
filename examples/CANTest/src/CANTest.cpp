@@ -22,35 +22,35 @@ class RxFromCAN : public PingPongNotificationsFromCAN
     public:
 		RxFromCAN() : ReceivedID(-1), RTR(false) , ReceivedFloatVal(1.0f){};
 
-        void ReceivedPong(const char* pText)
+        void ReceivedPong(const int Device, const char* pText)
         {
-			Serial.printf("Received: %s\n", pText);
+			Serial.printf("Received: %s from 0x%x\n", pText, Device);
  			ReceivedID = CANID_PP_PONG;
         };
 
-        void ReceivedPing(const char* pText)
+        void ReceivedPing(const int Device, const char* pText)
         {
-			Serial.printf("Received: %s\n", pText);
+			Serial.printf("Received: %s from 0x%x\n", pText, Device);
 			ReceivedID = CANID_PP_PING;
         };
 
-        void ReceivedFloat(const float Val)
+        void ReceivedFloat(const int Device, const float Val)
         {
-			Serial.printf("Rcvd float: %.3f\n", Val);
+			Serial.printf("Rcvd float: %.3f from 0x%x\n", Val, Device);
 			ReceivedFloatVal = Val;
 			ReceivedID = CANID_PP_FLOAT;
         };
 
-		void ReceivedRequestInt()
+		void ReceivedRequestInt(const int Device)
 		{
-			Serial.printf("Received: RTR\n");
+			Serial.printf("Received: RTR from 0x%x\n", Device);
 			ReceivedID = CANID_PP_RTRINT;
 			RTR = true;
 		};
 
-		void ReceivedInt(int Val)
+		void ReceivedInt(const int Device, int Val)
 		{
-			Serial.printf("Rcvd int: %d\n", Val);
+			Serial.printf("Rcvd int: %d from 0x%x\n", Val, Device);
 			ReceivedID = CANID_PP_RTRINT;
 		};
 
@@ -66,26 +66,51 @@ class RxFromCAN : public PingPongNotificationsFromCAN
 RxFromCAN CANBroker;
 
 // The actual CAN bus class, which handles all communication.
-CANPingPong CANDevice(CreateCanLib(), &CANBroker);
+// You may need to adjust the used pins!
+#if defined ARDUINO_PT_SENSOR || defined ARDUINO_B_G431B_ESC1
+	CANPingPong CANDevice(CreateCanLib(A_CAN_TX, A_CAN_RX), &CANBroker);
+#endif
+
+#ifdef ESP32
+	CANPingPong CANDevice(CreateCanLib(GPIO_NUM_5, GPIO_NUM_35), &CANBroker);
+#endif
+
 
 int MyDeviceID=0;
 
 void setup() 
 {
 	Serial.begin(BAUDRATE);
-	delay(3000);
+	delay(5000);
 	while (!Serial);
 	Serial.println("Started");
 
+	//*************************************************************
 	// Create a random device ID to avoid conflicts on the CAN bus.
-	MyDeviceID = random(1, 255);
+	// There are max. 7 bits available and they must not be all 1.
+	// Wrong or duplicate device IDs may lead to very wierd effects! 
+	#if defined ARDUINO_PT_SENSOR
+		MyDeviceID = 0x35; 
+	#elif defined ARDUINO_B_G431B_ESC1
+		MyDeviceID = 0x21; 
+	#else
+		// NOTE: This is dangerous sinde on many MCU types, the result will be identical for each run! 
+		randomSeed(micros());
+		MyDeviceID = random(1,126);
+	#endif
+	//**************************************************************
+
 
 	CANDevice.Init();
+
 	// Set bus termination on/off (may not be available on all platforms).
 	if (CAN_OK!=CANDevice.Can1->SetBusTermination(true))
 		Serial.println("Setting CAN bus termination via software not possible");
 	
-	Serial.printf("Setup done, random device ID is %d\n", MyDeviceID);
+	// Note: Blinking will only work if LED_BUILTIN is defined and the board supports it!
+	CANDevice.Can1->EnableBlinkOnActivity();
+	
+	Serial.printf("Setup done, random device ID is %d (0x%x)\n", MyDeviceID, MyDeviceID);
 }
 
 void loop()
