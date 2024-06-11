@@ -88,7 +88,8 @@ private:
 #endif
 
 
-#if defined(_ESP32_)
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32)
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"

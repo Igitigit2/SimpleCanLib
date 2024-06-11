@@ -1,4 +1,6 @@
 
+// #include "driver/twai.h"
+
 /*
 
     Portable CAN bus library - implementation for STM B-G431B-ESC1 board.
@@ -21,21 +23,28 @@
 	#define PrintLog    Serial.printf
 #endif
 
-// #define ESP32
 
-#if defined(ESP32)
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32)
+	#include "freertos/FreeRTOS.h"
+	#include "freertos/queue.h"
+	#include "ThreadSafeQueue.h"
+	#include "esp_intr_alloc.h"       
+#endif
 
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+	#include "soc/system_reg.h"
+	#define ETS_CAN_INTR_SOURCE	37		// Not provided by framework for S3...
+#endif
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-#include "ThreadSafeQueue.h"
+#if defined(CONFIG_IDF_TARGET_ESP32)
+	#include "soc/dport_reg.h"
+#endif
 
-#include "esp_intr_alloc.h"       
-#include "soc/dport_reg.h"
+ 
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32)
+
 #include <math.h>
-
 #include "driver/gpio.h"
-
 #include "ESP32_CAN_regdef.h"
 #include "SimpleCAN.h"
 
@@ -344,24 +353,39 @@ SCCanStatus __attribute__((optimize("O0"))) SimpleCan_ESP32_DevC::Init(SCCanSpee
 	//Time quantum
 	double __tq;
 
-    //enable module
-    DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG, DPORT_CAN_CLK_EN);
-    DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG, DPORT_CAN_RST);
+	#if defined(CONFIG_IDF_TARGET_ESP32S3) 
+		// S3 variant
+		// Enable module
+		REG_SET_FIELD(SYSTEM_PERIP_CLK_EN0_REG, SYSTEM_TWAI_CLK_EN, 1);
+		REG_SET_FIELD(SYSTEM_PERIP_RST_EN0_REG, SYSTEM_TWAI_RST, 0);
+	#endif
+	
 
-    //configure TX pin
-    gpio_set_level(TxPin, 1);
-    gpio_set_direction(TxPin,GPIO_MODE_OUTPUT);
-    gpio_matrix_out(TxPin,CAN_TX_IDX,0,0);
-    gpio_pad_select_gpio(TxPin);
+	#if defined(CONFIG_IDF_TARGET_ESP32)
+		// Older ESP32s 
+		// Enable module
+		DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG, DPORT_CAN_CLK_EN);
+		DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG, DPORT_CAN_RST);
+	#endif
 
-    //configure RX pin
+
+	// Configure TX pin
+	gpio_set_level(TxPin, 1);
+	gpio_set_direction(TxPin,GPIO_MODE_OUTPUT);
+	gpio_matrix_out(TxPin,CAN_TX_IDX,0,0);
+	gpio_pad_select_gpio(TxPin);
+
+	// Configure RX pin
 	gpio_set_direction(RxPin,GPIO_MODE_INPUT);
 	gpio_matrix_in(RxPin,CAN_RX_IDX,0);
 	gpio_pad_select_gpio(RxPin);
 
+#if defined(CONFIG_IDF_TARGET_ESP32)
     //set to PELICAN mode
 	// MODULE_CAN->CDR.B.CAN_M=0x1;			// 0=Basic CAN, 1=PeliCAN
+	// NOTE: This bit is not available on the S3 variant!
 	HAL_FORCE_MODIFY_U32_REG_FIELD(MODULE_CAN->CDR, B.CAN_M, 0x1)
+#endif
 
 	//synchronization jump width is the same for all baud rates
 	// MODULE_CAN->BTR0.B.SJW		=0x1;

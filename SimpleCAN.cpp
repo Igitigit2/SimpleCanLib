@@ -280,7 +280,6 @@ void RxHandlerBase::Notify(/*...*/)
 		Serial.println("Error returned from ReadFrame!");
 		delay(100);
 	}
-
     // Let the hardware know the frame has been read.
 	ReleaseRcvBuffer();
 
@@ -291,7 +290,8 @@ void RxHandlerBase::Notify(/*...*/)
 
 void RxHandlerBase::CANBusACtivityDetected()
 {
-	#ifdef LED_BUILTIN
+	#pragma message("Activity LED disabled!!!")
+	#ifdef LED_BUILTINxxx
 	if (SimpleCan::BlinkOnActivity)
 		digitalToggle(LED_BUILTIN);
 	#endif

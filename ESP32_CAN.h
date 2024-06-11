@@ -32,25 +32,46 @@
 #include <stdint.h>
 
 
+#if defined(CONFIG_IDF_TARGET_ESP32S3) 
+	#if 0
+		// For information: CAN related function indices:
+		#define TWAI_RX_IDX                   116
+		#define TWAI_TX_IDX                   116
+		#define TWAI_BUS_OFF_ON_IDX           117
+		#define TWAI_CLKOUT_IDX               118
+	#endif
+
+	#define CAN_TX_IDX TWAI_TX_IDX
+	#define CAN_RX_IDX TWAI_RX_IDX
+#endif
+
+
 /**
  * \brief CAN frame type (standard/extended)
  */
-typedef enum {
+typedef enum 
+{
 	CAN_frame_std=0, 						/**< Standard frame, using 11 bit identifer. */
 	CAN_frame_ext=1 						/**< Extended frame, using 29 bit identifer. */
-}CAN_frame_format_t;
+} CAN_frame_format_t;
+
 
 /**
  * \brief CAN RTR
  */
-typedef enum {
+typedef enum 
+{
 	CAN_no_RTR=0, 							/**< No RTR frame. */
 	CAN_RTR=1 								/**< RTR frame. */
-}CAN_RTR_t;
+} CAN_RTR_t;
+
 
 /** \brief Frame information record type */
-typedef union{uint32_t U;					/**< \brief Unsigned access */
-	 struct {
+typedef union
+{
+	uint32_t U;					/**< \brief Unsigned access */
+	struct 
+	{
 		uint8_t 			DLC:4;        	/**< \brief [3:0] DLC, Data length container */
 		unsigned int 		unknown_2:2;    /**< \brief \internal unknown */
 		CAN_RTR_t 			RTR:1;          /**< \brief [6:6] RTR, Remote Transmission Request */
@@ -61,14 +82,16 @@ typedef union{uint32_t U;					/**< \brief Unsigned access */
 
 
 /** \brief CAN Frame structure */
-typedef struct {
+typedef struct 
+{
 	CAN_FIR_t	FIR;						/**< \brief Frame information record*/
     uint32_t 	MsgID;     					/**< \brief Message ID */
-    union {
+    union 
+	{
         uint8_t u8[8];						/**< \brief Payload byte access*/
         uint32_t u32[2];					/**< \brief Payload u32 access*/
     } data;
-}CAN_frame_t;
+} CAN_frame_t;
 
 
 /**

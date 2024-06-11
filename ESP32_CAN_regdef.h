@@ -31,8 +31,16 @@
 
 #include "ESP32_CAN.h"	//CAN_FIR_t
 
-/** \brief Start address of CAN registers */
-#define MODULE_CAN              					((volatile CAN_Module_t    *)0x3ff6b000)
+#if defined(CONFIG_IDF_TARGET_ESP32)
+	/** \brief Start address of CAN registers */
+	#define MODULE_CAN              					((volatile CAN_Module_t    *)0x3ff6b000)
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+	/** \brief Start address of CAN registers */
+	#define MODULE_CAN              					((volatile CAN_Module_t    *)0x6002B000)
+#endif
+
 
 /** \brief Get standard message ID */
 #define _CAN_GET_STD_ID								(((uint32_t)MODULE_CAN->MBX_CTRL.FCTRL.TX_RX.STD.ID[0] << 3) | \
@@ -94,7 +102,7 @@ typedef volatile struct
 	    } B;
 	} MOD;
 	
-	union
+	union			// TWAI_CMD_REG (0x0004)
 	{
 		uint32_t U;								/**< \brief Unsigned access */
 	    struct 
@@ -108,7 +116,28 @@ typedef volatile struct
 	    } B;
 	} CMR;
 
-	union
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+	union		// TWAI_STATUS_REG (0x0008)
+	{
+		uint32_t U;								/**< \brief Unsigned access */
+	    struct {
+	        unsigned int RBS:1; 					/**< \brief SR.0 Receive Buffer Status */
+	        unsigned int DOS:1;            			/**< \brief SR.1 Data Overrun Status */
+	        unsigned int TBS:1;                     /**< \brief SR.2 Transmit Buffer Status */
+	        unsigned int TCS:1;                   	/**< \brief SR.3 Transmission Complete Status */
+	        unsigned int RS:1;            			/**< \brief SR.4 Receive Status */
+	        unsigned int TS:1;            			/**< \brief SR.5 Transmit Status */
+	        unsigned int ES:1;            			/**< \brief SR.6 Error Status */
+	        unsigned int BS:1;            			/**< \brief SR.7 Bus Status */
+	        unsigned int MISS:1;            		/**< \brief SR.8 Data packet is misssing */
+	        unsigned int reserved_23:23;            /**< \brief \internal Reserved */
+	    } B;
+	} SR;			
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
+	union			// TWAI_STATUS_REG (0x0008)
 	{
 		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
@@ -123,8 +152,53 @@ typedef volatile struct
 	        unsigned int reserved_24:24;            /**< \brief \internal Reserved */
 	    } B;
 	} SR;
+#endif
 
-	union
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
+#endif
+
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+	union			// TWAI_INT_RAW_REG (0x000C)
+	{
+		uint32_t U;								/**< \brief Unsigned access */
+	    struct {
+	        unsigned int RI:1; 						/**< \brief IR.0 Receive Interrupt */
+	        unsigned int TI:1;            			/**< \brief IR.1 Transmit Interrupt */
+	        unsigned int EI:1;                     	/**< \brief IR.2 Error Interrupt */
+	        unsigned int DOI:1;                   	/**< \brief IR.3 Data Overrun Interrupt */
+	        unsigned int WUI:1;            			/**< \brief IR.4 Wake-Up Interrupt */
+	        unsigned int EPI:1;            			/**< \brief IR.5 Error Passive Interrupt */
+	        unsigned int ALI:1;            			/**< \brief IR.6 Arbitration Lost Interrupt */
+	        unsigned int BEI:1;            			/**< \brief IR.7 Bus Error Interrupt */
+			unsigned int BSI:1;						/**< \brief IR.8 Bus State Changed Interrupt  */
+	        unsigned int reserved_23:23;            /**< \brief \internal Reserved */
+	    } B;
+	} IR;
+
+	union			// TWAI_INT ENA_REG (0x0010)
+	{
+		uint32_t U;								/**< \brief Unsigned access */
+	    struct {
+	        unsigned int RIE:1; 					/**< \brief IER.0 Receive Interrupt Enable */
+	        unsigned int TIE:1;            			/**< \brief IER.1 Transmit Interrupt Enable */
+	        unsigned int EIE:1;                     /**< \brief IER.2 Error Interrupt Enable */
+	        unsigned int DOIE:1;                   	/**< \brief IER.3 Data Overrun Interrupt Enable */
+	        unsigned int WUIE:1;            		/**< \brief IER.4 Wake-Up Interrupt Enable */
+	        unsigned int EPIE:1;            		/**< \brief IER.5 Error Passive Interrupt Enable */
+	        unsigned int ALIE:1;            		/**< \brief IER.6 Arbitration Lost Interrupt Enable */
+	        unsigned int BEIE:1;            		/**< \brief IER.7 Bus Error Interrupt Enable */
+			unsigned int BSIE:1;					/**< \brief IR.8 Bus State Changed Interrupt Enable */
+	        unsigned int reserved_23:23;            /**< \brief \internal Reserved */
+	    } B;
+	} IER;
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
+	union			// TWAI_INT_RAW_REG (0x000C)
 	{
 		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
@@ -140,7 +214,7 @@ typedef volatile struct
 	    } B;
 	} IR;
 
-	union
+	union			// TWAI_INT ENA_REG (0x0010)
 	{
 		uint32_t U;								/**< \brief Unsigned access */
 	    struct {
@@ -155,9 +229,24 @@ typedef volatile struct
 	        unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} IER;
+#endif
 
     uint32_t RESERVED0;
 
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
+	    struct {
+	        unsigned int BRP:13; 					/**< \brief BTR0[12:0] Baud Rate Prescaler */
+	        unsigned int reserved_1:1;
+			unsigned int SJW:2;            			/**< \brief BTR0[14:15] Synchronization Jump Width*/
+	        unsigned int reserved_16:16;            /**< \brief \internal Reserved  */
+	    } B;
+	} BTR0;
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
 	union
 	{
 		uint32_t U;								/**< \brief Unsigned access */
@@ -167,6 +256,7 @@ typedef volatile struct
 	        unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} BTR0;
+#endif
 
 	union
 	{
@@ -296,6 +386,20 @@ typedef volatile struct
 
 	uint32_t RESERVED2;	
 
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+	union
+	{
+		uint32_t U;								/**< \brief Unsigned access */
+	    struct {
+			unsigned int COD:7; 					/**< \brief CDR[2:0] CLKOUT frequency selector based of fOSC*/
+			unsigned int COFF:1; 					/**< \brief CDR.3 CLKOUT off*/
+			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
+	    } B;
+	} CDR;
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
 	union
 	{
 		uint32_t U;								/**< \brief Unsigned access */
@@ -309,6 +413,7 @@ typedef volatile struct
 			unsigned int reserved_24:24;            /**< \brief \internal Reserved  */
 	    } B;
 	} CDR;
+#endif
 
 #if 0
     uint32_t IRAM[2];
