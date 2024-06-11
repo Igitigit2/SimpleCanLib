@@ -2,7 +2,22 @@
 
 ## Introduction
 
-SimpleCAN is library intended to run on MCUs with integrated CAN controller. It is intended to separate the low level, MCU specific code from the actual application. You can define "CAN profiles" which use the same code on different MCUs and you can have an ESP32 communicate with an STM32 CPU, both compiling the same code, just using platform specific versions of this library. The library has so far been tested on ESP32 Devkit 4 boards fro AZDelivery and the STM32 dev board B-G431B-ESC1 from STM. 
+SimpleCAN is library intended to run on MCUs with integrated CAN controller. It is intended to separate the low level, MCU specific code from the actual application. You can define "CAN profiles" which use the same code on different MCUs and you can have an ESP32 communicate with an STM32 CPU, both compiling the same code, just using platform specific versions of this library. The library has so far been tested on ESP32 Devkit 4 boards from AZDelivery and the STM32 dev board B-G431B-ESC1 from STM as well as self developed STM32G431B and ESP32-S3 based boards. 
+
+## Releases
+
+### V0.1.0
+- Support for ESP32-S3 variant
+- EnableBlinkOnActivity(L) now requires specification of the pin on which the LED is connected 
+- No more special build flags are required in platformio.ini. Comopilation now relies on the defines 
+    - CONFIG_IDF_TARGET_ESP32S3  (ESP32 S3 variant)
+    - CONFIG_IDF_TARGET_ESP32    (ESP32)
+    - STM32G4xx (STM32G431 MCUs)
+
+ In Addition, the demo program uses the following board definitions (you may not need them...):
+    - ARDUINO_B_G431B_ESC1
+    - ARDUINO_PT_SENSOR
+
 
 ## What you should know before reading
 
@@ -22,6 +37,7 @@ CAN bus as such is completely ignorant of any application layer. It only defines
 4. Compile CANTest for your specific boards and download it to two boards.
 5. Connect the CAN bus of the two boards and start them up.
 6. If serial monitor is connected to one of the two boards, you should see reports of incoming and sent messages.
+
 
 
 ## How it works

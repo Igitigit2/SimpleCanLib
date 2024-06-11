@@ -174,6 +174,34 @@ class CanRxMessage
 
 
 //--------------------------------------------------------------------------------------
+// A simpke helper since digoitalToggle() was not available on the ESP32S3.
+class ToggleLED
+{
+	public:
+		ToggleLED() {LEDState=false;};
+
+		void SetPin(uint8_t PinNum)
+		{
+			LEDPinNum = PinNum;
+			pinMode(PinNum, OUTPUT);
+		};
+
+		void Toggle()
+		{
+			if (LEDState)
+				digitalWrite(LEDPinNum, 0);
+			else
+				digitalWrite(LEDPinNum, 1);
+			LEDState = !LEDState;
+		};
+
+	private:
+		bool LEDState;
+		uint8_t LEDPinNum;
+};
+
+
+//--------------------------------------------------------------------------------------
 // Abstract class which must be implemented by a platform specific version.
 
 
@@ -302,11 +330,12 @@ class SimpleCan
 
 		// Enable/Disable blinking on CAN bus activity.
 		void DisableBlinkOnActivity();
-		void EnableBlinkOnActivity ();
+		void EnableBlinkOnActivity (uint8_t LEDPinNum);
 
 		static SafeQueue<CanRxMessage> RxQueue;
 		static SafeQueue<CANTxMessage> TxQueue;
 		static bool BlinkOnActivity;
+		static ToggleLED LED;
 
 	private:
 		bool DoNotSend;

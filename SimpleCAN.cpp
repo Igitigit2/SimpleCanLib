@@ -13,6 +13,8 @@
 SafeQueue<CanRxMessage> SimpleCan::RxQueue(RX_QUEUE_SIZE);
 SafeQueue<CANTxMessage> SimpleCan::TxQueue(TX_QUEUE_SIZE);
 bool SimpleCan::BlinkOnActivity=false;
+ToggleLED SimpleCan::LED;
+
 
 
 // Set a filter to accept all incoming messages
@@ -122,12 +124,10 @@ void SimpleCan::DisableBlinkOnActivity()
 	BlinkOnActivity=false;
 };
 
-void SimpleCan::EnableBlinkOnActivity() 
+void SimpleCan::EnableBlinkOnActivity(uint8_t LEDPinNum) 
 {
+	LED.SetPin(LEDPinNum);
 	BlinkOnActivity=true;
-	#ifdef LED_BUILTIN
-		pinMode(LED_BUILTIN, OUTPUT);
-	#endif	
 };
 
 //***********************************************************************
@@ -290,11 +290,8 @@ void RxHandlerBase::Notify(/*...*/)
 
 void RxHandlerBase::CANBusACtivityDetected()
 {
-	#pragma message("Activity LED disabled!!!")
-	#ifdef LED_BUILTINxxx
 	if (SimpleCan::BlinkOnActivity)
-		digitalToggle(LED_BUILTIN);
-	#endif
+		SimpleCan::LED.Toggle();
 }
 
 bool RxHandlerBase::Loop()
